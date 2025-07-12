@@ -1,0 +1,12 @@
+#
+# Make the fan run faster and earlier
+#
+dtparam=fan_temp0=45000
+dtparam=fan_temp0_speed=125
+dtparam=fan_temp1=50000
+dtparam=fan_temp1_speed=175
+dtparam=fan_temp2=55000
+dtparam=fan_temp2_speed=225
+dtparam=fan_temp3=60000
+dtparam=fan_temp3_speed=250
+

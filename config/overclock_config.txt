@@ -1,0 +1,4 @@
+#
+# Overclock a little... not sure how far we can push this
+#
+arm_freq=2800
