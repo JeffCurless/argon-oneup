@@ -169,16 +169,26 @@ def getNVMETemp(device : str) -> float:
         
     return float(0.0)
     
-        
+def argonsysinfo_kbstr(kbval, wholenumbers = True):
+    remainder = 0
+    suffixidx = 0
+    suffixlist = ["KiB", "MiB", "GiB", "TiB"]
+    while kbval > 1023 and suffixidx < len(suffixlist):
+        remainder = kbval % 1024
+        kbval     = kbval // 1024
+        suffixidx = suffixidx + 1
+    return f"{kbval} {suffixlist[suffixidx]}"
+
+    
 stats = DriveStat( 'nvme0n1' )
 cpuTemp = setupTemperatureObject()
 
 while True:
+    os.system( "clear ")
     print( f"CPU  : {cpuTemp.temperature}" )
     print( f"Fan  : {getFanSpeed()}" )
     print( f"NVME : {getNVMETemp('nvme0n1')}" )
     data = stats.readWriteSectors()
-    print( f"Read : {data[0]*512}" )
-    print( f"Write: {data[1] *512}" )
-    time.sleep( 1 )
-    
+    print( f"Read : {argonsysinfo_kbstr(data[0]*512)}/s" )
+    print( f"Write: {argonsysinfo_kbstr(data[1]*512)}/s" )
+    time.sleep(1) 

@@ -1,0 +1,7 @@
+sequential 4K
+   READ: bw=826MiB/s (866MB/s), 826MiB/s-826MiB/s (866MB/s-866MB/s), io=96.8GiB (104GB), run=120003-120003msec
+  WRITE: bw=814MiB/s (854MB/s), 814MiB/s-814MiB/s (854MB/s-854MB/s), io=95.4GiB (102GB), run=120003-120003msec
+Random 4K
+   READ: bw=858MiB/s (900MB/s), 858MiB/s-858MiB/s (900MB/s-900MB/s), io=101GiB (108GB), run=120004-120004msec
+  WRITE: bw=803MiB/s (842MB/s), 803MiB/s-803MiB/s (842MB/s-842MB/s), io=94.1GiB (101GB), run=120003-120003msec
+
