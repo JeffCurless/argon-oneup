@@ -1,1 +1,1 @@
-sudo rmmod dummy_battery
+sudo rmmod test_power

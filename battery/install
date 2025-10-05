@@ -1,7 +1,7 @@
-sudo insmod dummy_battery.ko start_capacity=82 discharge_rate=1
+sudo insmod test_battery.ko start_capacity=82 discharge_rate=1
 
-ls -l /sys/class/power_supply/dummy-battery
-cat /sys/class/power_supply/dummy-battery/uevent
-cat /sys/class/power_supply/dummy-battery/capacity
-cat /sys/class/power_supply/dummy-battery/status
+ls -l /sys/class/power_supply/test_battery
+cat /sys/class/power_supply/test_battery/uevent
+cat /sys/class/power_supply/test_battery/capacity
+cat /sys/class/power_supply/test_battery/status
 
