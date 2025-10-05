@@ -25,6 +25,10 @@ enum test_power_id {
 	TEST_POWER_NUM,
 };
 
+#define BLKDRV_NAME "battery"
+#define FMT_PREFIX  ": %s[%d] "
+#define DEBUG_INFO( fmt, arg...)           printk( KERN_INFO BLKDRV_NAME FMT_PREFIX fmt, __func__, __LINE__, ##arg )
+
 static int ac_online			= 1;
 static int usb_online			= 1;
 static int battery_status		= POWER_SUPPLY_STATUS_DISCHARGING;
@@ -44,6 +48,7 @@ static int test_power_get_ac_property(struct power_supply *psy,
 				      enum power_supply_property psp,
 				      union power_supply_propval *val)
 {
+	DEBUG_INFO( "psp = %d",psp );
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = ac_online;
@@ -58,6 +63,7 @@ static int test_power_get_usb_property(struct power_supply *psy,
 				      enum power_supply_property psp,
 				      union power_supply_propval *val)
 {
+	DEBUG_INFO( "psp = %d",psp );
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = usb_online;
@@ -72,6 +78,8 @@ static int test_power_get_battery_property(struct power_supply *psy,
 					   enum power_supply_property psp,
 					   union power_supply_propval *val)
 {
+	DEBUG_INFO( "psp = %d", psp );
+
 	switch (psp) {
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		val->strval = "Test battery";
@@ -139,6 +147,7 @@ static int test_power_get_battery_property(struct power_supply *psy,
 static int test_power_battery_property_is_writeable(struct power_supply *psy,
 						    enum power_supply_property psp)
 {
+	DEBUG_INFO( "psp = %d",psp );
 	return psp == POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR;
 }
 
@@ -146,6 +155,7 @@ static int test_power_set_battery_property(struct power_supply *psy,
 					   enum power_supply_property psp,
 					   const union power_supply_propval *val)
 {
+	DEBUG_INFO( "psp = %d",psp );
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		if (val->intval < 0 ||
