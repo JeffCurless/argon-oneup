@@ -1,0 +1,10 @@
+.module*
+..module*
+.Module*
+Module*
+modules*
+*.ko
+*.mod.*
+*.cmd
+*.o
+*.mod
