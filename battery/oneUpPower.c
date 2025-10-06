@@ -136,7 +136,7 @@ static int get_battery_property(struct power_supply *psy,
 	    return get_battery_propertiesInts( psy, psp, val );
     }
 
-    return 0
+    return 0;
 }
 
 static enum power_supply_property test_power_ac_props[] = {

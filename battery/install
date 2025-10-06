@@ -1,4 +1,4 @@
-sudo insmod test_power.ko
+sudo insmod oneUpPower.ko
 
 ls -l /sys/class/power_supply/BAT0
 cat /sys/class/power_supply/BAT0/uevent
