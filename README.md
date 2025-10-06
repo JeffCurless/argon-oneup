@@ -19,3 +19,18 @@ A growing set of FIO jobs to help test performance on a number of different NVME
 A hacky little program to monitor nvme,fan and CPU temperature.
 
 
+## Work that needs to be completed
+
+- [X] Get test_power.c code running and simualating a battery for the Raspberry PI
+- [ ] Remove all unneeded code from the driver, called oneUpPower.c
+- [ ] Fix the naming of all the internerals properly, and makes sure the battery tech, and manuacturer are correct
+- [ ] Port python battery code to C
+- [ ] Incorprate working C code into driver, and do all the plumbing
+- [ ] Create an installer
+- [ ] Create an uninstaller
+
+## Supported Operating Systems
+
+> [!NOTE]
+> This code is currently only supported on 64 bit Raspberry PI OS.  There is not current plan to make it operational on any other OS at this time.
+
