@@ -19,9 +19,8 @@
 #include <generated/utsrelease.h>
 
 enum test_power_id {
-	TEST_AC,
 	TEST_BATTERY,
-	TEST_USB,
+	TEST_AC,
 	TEST_POWER_NUM,
 };
 
@@ -107,48 +106,33 @@ char *enumNames[] = {
 	};
 //
 //
-#define BLKDRV_NAME "battery"
+#define BLKDRV_NAME "BAT0"
 #define FMT_PREFIX  ": %s[%d] "
 #define DEBUG_INFO( fmt, arg...)           printk( KERN_INFO BLKDRV_NAME FMT_PREFIX fmt, __func__, __LINE__, ##arg )
 
+#define TOTAL_LIFE_SECONDS		(3 * 60 * 60)
+#define TOTAL_CHARGE			(2000 * 1000) // uAH
+#define TOTAL_CHARGE_FULL_SECONDS	(60 * 60)
+
 static int ac_online			= 1;
-static int usb_online			= 1;
-static int battery_status		= POWER_SUPPLY_STATUS_DISCHARGING;
+static int battery_status	        = POWER_SUPPLY_STATUS_CHARGING;
+static int battery_level		= POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
 static int battery_health		= POWER_SUPPLY_HEALTH_GOOD;
 static int battery_present		= 1; /* true */
 static int battery_technology		= POWER_SUPPLY_TECHNOLOGY_LION;
-static int battery_capacity		= 100;
-static int battery_voltage		= 3300;
-static int battery_charge_counter	= -1000;
-static int battery_current		= -1600;
-static enum power_supply_charge_behaviour battery_charge_behaviour =
-	POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO;
-
+static int battery_capacity		= 80;
+static int battery_timeleft	        = TOTAL_LIFE_SECONDS;
+static int battery_temperature		= 30;
+static int battery_voltage	        = (4200 * 1000); // uV
 static bool module_initialized;
 
 static int test_power_get_ac_property(struct power_supply *psy,
 				      enum power_supply_property psp,
 				      union power_supply_propval *val)
 {
-	DEBUG_INFO( "psp = %d",psp );
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = ac_online;
-		break;
-	default:
-		return -EINVAL;
-	}
-	return 0;
-}
-
-static int test_power_get_usb_property(struct power_supply *psy,
-				      enum power_supply_property psp,
-				      union power_supply_propval *val)
-{
-	DEBUG_INFO( "psp = %d",psp );
-	switch (psp) {
-	case POWER_SUPPLY_PROP_ONLINE:
-		val->intval = usb_online;
 		break;
 	default:
 		return -EINVAL;
@@ -186,35 +170,33 @@ static int test_power_get_battery_property(struct power_supply *psy,
 		val->intval = battery_technology;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
-		val->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+		val->intval = battery_level;//
+
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-	case POWER_SUPPLY_PROP_CHARGE_NOW:
 		val->intval = battery_capacity;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		val->intval = battery_charge_counter;
+	case POWER_SUPPLY_PROP_CHARGE_EMPTY:
+		val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_NOW:
+		val->intval = battery_capacity * TOTAL_CHARGE / 100;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
-		val->intval = 100;
+		val->intval = TOTAL_CHARGE;
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
+		val->intval = battery_timeleft;
+		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
-		val->intval = 3600;
+		val->intval = (100 - battery_capacity) * TOTAL_CHARGE_FULL_SECONDS / 100;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = 26;
+		val->intval = battery_temperature;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		val->intval = battery_voltage;
-		break;
-	case POWER_SUPPLY_PROP_CURRENT_AVG:
-	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		val->intval = battery_current;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
-		val->intval = battery_charge_behaviour;
 		break;
 	default:
 		pr_info("%s: some properties deliberately report errors.\n",
@@ -236,33 +218,6 @@ static int test_power_get_battery_property(struct power_supply *psy,
 	return 0;
 }
 
-static int test_power_battery_property_is_writeable(struct power_supply *psy,
-						    enum power_supply_property psp)
-{
-	DEBUG_INFO( "psp = %d",psp );
-	return psp == POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR;
-}
-
-static int test_power_set_battery_property(struct power_supply *psy,
-					   enum power_supply_property psp,
-					   const union power_supply_propval *val)
-{
-	DEBUG_INFO( "psp = %d",psp );
-	switch (psp) {
-	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
-		if (val->intval < 0 ||
-		    val->intval >= BITS_PER_TYPE(typeof(psy->desc->charge_behaviours)) ||
-		    !(BIT(val->intval) & psy->desc->charge_behaviours)) {
-			return -EINVAL;
-		}
-		battery_charge_behaviour = val->intval;
-		break;
-	default:
-		return -EINVAL;
-	}
-	return 0;
-}
-
 static enum power_supply_property test_power_ac_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 };
@@ -273,10 +228,10 @@ static enum power_supply_property test_power_battery_props[] = {
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_CHARGE_EMPTY,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
-	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
@@ -286,58 +241,40 @@ static enum power_supply_property test_power_battery_props[] = {
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_CURRENT_AVG,
-	POWER_SUPPLY_PROP_CURRENT_NOW,
-	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
 };
 
 static char *test_power_ac_supplied_to[] = {
-	"test_battery",
+	"BAT0",
 };
 
 static struct power_supply *test_power_supplies[TEST_POWER_NUM];
 
 static const struct power_supply_desc test_power_desc[] = {
-	[TEST_AC] = {
-		.name = "test_ac",
-		.type = POWER_SUPPLY_TYPE_MAINS,
-		.properties = test_power_ac_props,
-		.num_properties = ARRAY_SIZE(test_power_ac_props),
-		.get_property = test_power_get_ac_property,
-	},
 	[TEST_BATTERY] = {
-		.name = "test_battery",
+		.name = "BAT0",
 		.type = POWER_SUPPLY_TYPE_BATTERY,
 		.properties = test_power_battery_props,
 		.num_properties = ARRAY_SIZE(test_power_battery_props),
 		.get_property = test_power_get_battery_property,
-		.set_property = test_power_set_battery_property,
-		.property_is_writeable = test_power_battery_property_is_writeable,
-		.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO)
-				   | BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
-				   | BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_FORCE_DISCHARGE),
 	},
-	[TEST_USB] = {
-		.name = "test_usb",
-		.type = POWER_SUPPLY_TYPE_USB,
+	[TEST_AC] = {
+		.name = "AC0",
+		.type = POWER_SUPPLY_TYPE_MAINS,
 		.properties = test_power_ac_props,
 		.num_properties = ARRAY_SIZE(test_power_ac_props),
-		.get_property = test_power_get_usb_property,
+		.get_property = test_power_get_ac_property,
+
 	},
 };
 
 static const struct power_supply_config test_power_configs[] = {
+        {   	/* test_battery */
+	},
 	{
 		/* test_ac */
 		.supplied_to = test_power_ac_supplied_to,
 		.num_supplicants = ARRAY_SIZE(test_power_ac_supplied_to),
-	}, {
-		/* test_battery */
-	}, {
-		/* test_usb */
-		.supplied_to = test_power_ac_supplied_to,
-		.num_supplicants = ARRAY_SIZE(test_power_ac_supplied_to),
-	},
+	}, 
 };
 
 static int __init test_power_init(void)
@@ -375,7 +312,6 @@ static void __exit test_power_exit(void)
 
 	/* Let's see how we handle changes... */
 	ac_online = 0;
-	usb_online = 0;
 	battery_status = POWER_SUPPLY_STATUS_DISCHARGING;
 	for (i = 0; i < ARRAY_SIZE(test_power_supplies); i++)
 		power_supply_changed(test_power_supplies[i]);
@@ -404,14 +340,6 @@ static struct battery_property_map map_ac_online[] = {
 	{ -1, NULL  },
 };
 
-static struct battery_property_map map_status[] = {
-	{ POWER_SUPPLY_STATUS_CHARGING,     "charging"     },
-	{ POWER_SUPPLY_STATUS_DISCHARGING,  "discharging"  },
-	{ POWER_SUPPLY_STATUS_NOT_CHARGING, "not-charging" },
-	{ POWER_SUPPLY_STATUS_FULL,         "full"         },
-	{ -1,                               NULL           },
-};
-
 static struct battery_property_map map_health[] = {
 	{ POWER_SUPPLY_HEALTH_GOOD,           "good"        },
 	{ POWER_SUPPLY_HEALTH_OVERHEAT,       "overheat"    },
@@ -426,17 +354,6 @@ static struct battery_property_map map_present[] = {
 	{ 1,  "true"  },
 	{ -1, NULL    },
 };
-
-static struct battery_property_map map_technology[] = {
-	{ POWER_SUPPLY_TECHNOLOGY_NiMH, "NiMH" },
-	{ POWER_SUPPLY_TECHNOLOGY_LION, "LION" },
-	{ POWER_SUPPLY_TECHNOLOGY_LIPO, "LIPO" },
-	{ POWER_SUPPLY_TECHNOLOGY_LiFe, "LiFe" },
-	{ POWER_SUPPLY_TECHNOLOGY_NiCd, "NiCd" },
-	{ POWER_SUPPLY_TECHNOLOGY_LiMn, "LiMn" },
-	{ -1,				NULL   },
-};
-
 
 static int map_get_value(struct battery_property_map *map, const char *key,
 				int def_val)
@@ -493,33 +410,6 @@ static int param_get_ac_online(char *buffer, const struct kernel_param *kp)
 			map_get_key(map_ac_online, ac_online, "unknown"));
 }
 
-static int param_set_usb_online(const char *key, const struct kernel_param *kp)
-{
-	usb_online = map_get_value(map_ac_online, key, usb_online);
-	signal_power_supply_changed(test_power_supplies[TEST_USB]);
-	return 0;
-}
-
-static int param_get_usb_online(char *buffer, const struct kernel_param *kp)
-{
-	return sprintf(buffer, "%s\n",
-			map_get_key(map_ac_online, usb_online, "unknown"));
-}
-
-static int param_set_battery_status(const char *key,
-					const struct kernel_param *kp)
-{
-	battery_status = map_get_value(map_status, key, battery_status);
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-static int param_get_battery_status(char *buffer, const struct kernel_param *kp)
-{
-	return sprintf(buffer, "%s\n",
-			map_get_key(map_ac_online, battery_status, "unknown"));
-}
-
 static int param_set_battery_health(const char *key,
 					const struct kernel_param *kp)
 {
@@ -549,96 +439,9 @@ static int param_get_battery_present(char *buffer,
 			map_get_key(map_ac_online, battery_present, "unknown"));
 }
 
-static int param_set_battery_technology(const char *key,
-					const struct kernel_param *kp)
-{
-	battery_technology = map_get_value(map_technology, key,
-						battery_technology);
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-static int param_get_battery_technology(char *buffer,
-					const struct kernel_param *kp)
-{
-	return sprintf(buffer, "%s\n",
-			map_get_key(map_ac_online, battery_technology,
-					"unknown"));
-}
-
-static int param_set_battery_capacity(const char *key,
-					const struct kernel_param *kp)
-{
-	int tmp;
-
-	if (1 != sscanf(key, "%d", &tmp))
-		return -EINVAL;
-
-	battery_capacity = tmp;
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-#define param_get_battery_capacity param_get_int
-
-static int param_set_battery_voltage(const char *key,
-					const struct kernel_param *kp)
-{
-	int tmp;
-
-	if (1 != sscanf(key, "%d", &tmp))
-		return -EINVAL;
-
-	battery_voltage = tmp;
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-#define param_get_battery_voltage param_get_int
-
-static int param_set_battery_charge_counter(const char *key,
-					const struct kernel_param *kp)
-{
-	int tmp;
-
-	if (1 != sscanf(key, "%d", &tmp))
-		return -EINVAL;
-
-	battery_charge_counter = tmp;
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-#define param_get_battery_charge_counter param_get_int
-
-static int param_set_battery_current(const char *key,
-					const struct kernel_param *kp)
-{
-	int tmp;
-
-	if (1 != sscanf(key, "%d", &tmp))
-		return -EINVAL;
-
-	battery_current = tmp;
-	signal_power_supply_changed(test_power_supplies[TEST_BATTERY]);
-	return 0;
-}
-
-#define param_get_battery_current param_get_int
-
 static const struct kernel_param_ops param_ops_ac_online = {
 	.set = param_set_ac_online,
 	.get = param_get_ac_online,
-};
-
-static const struct kernel_param_ops param_ops_usb_online = {
-	.set = param_set_usb_online,
-	.get = param_get_usb_online,
-};
-
-static const struct kernel_param_ops param_ops_battery_status = {
-	.set = param_set_battery_status,
-	.get = param_get_battery_status,
 };
 
 static const struct kernel_param_ops param_ops_battery_present = {
@@ -646,82 +449,20 @@ static const struct kernel_param_ops param_ops_battery_present = {
 	.get = param_get_battery_present,
 };
 
-static const struct kernel_param_ops param_ops_battery_technology = {
-	.set = param_set_battery_technology,
-	.get = param_get_battery_technology,
-};
-
 static const struct kernel_param_ops param_ops_battery_health = {
 	.set = param_set_battery_health,
 	.get = param_get_battery_health,
 };
 
-static const struct kernel_param_ops param_ops_battery_capacity = {
-	.set = param_set_battery_capacity,
-	.get = param_get_battery_capacity,
-};
-
-static const struct kernel_param_ops param_ops_battery_voltage = {
-	.set = param_set_battery_voltage,
-	.get = param_get_battery_voltage,
-};
-
-static const struct kernel_param_ops param_ops_battery_charge_counter = {
-	.set = param_set_battery_charge_counter,
-	.get = param_get_battery_charge_counter,
-};
-
-static const struct kernel_param_ops param_ops_battery_current = {
-	.set = param_set_battery_current,
-	.get = param_get_battery_current,
-};
-
 #define param_check_ac_online(name, p) __param_check(name, p, void);
-#define param_check_usb_online(name, p) __param_check(name, p, void);
-#define param_check_battery_status(name, p) __param_check(name, p, void);
 #define param_check_battery_present(name, p) __param_check(name, p, void);
-#define param_check_battery_technology(name, p) __param_check(name, p, void);
-#define param_check_battery_health(name, p) __param_check(name, p, void);
-#define param_check_battery_capacity(name, p) __param_check(name, p, void);
-#define param_check_battery_voltage(name, p) __param_check(name, p, void);
-#define param_check_battery_charge_counter(name, p) __param_check(name, p, void);
-#define param_check_battery_current(name, p) __param_check(name, p, void);
-
 
 module_param(ac_online, ac_online, 0644);
 MODULE_PARM_DESC(ac_online, "AC charging state <on|off>");
 
-module_param(usb_online, usb_online, 0644);
-MODULE_PARM_DESC(usb_online, "USB charging state <on|off>");
-
-module_param(battery_status, battery_status, 0644);
-MODULE_PARM_DESC(battery_status,
-	"battery status <charging|discharging|not-charging|full>");
-
 module_param(battery_present, battery_present, 0644);
 MODULE_PARM_DESC(battery_present,
 	"battery presence state <good|overheat|dead|overvoltage|failure>");
-
-module_param(battery_technology, battery_technology, 0644);
-MODULE_PARM_DESC(battery_technology,
-	"battery technology <NiMH|LION|LIPO|LiFe|NiCd|LiMn>");
-
-module_param(battery_health, battery_health, 0644);
-MODULE_PARM_DESC(battery_health,
-	"battery health state <good|overheat|dead|overvoltage|failure>");
-
-module_param(battery_capacity, battery_capacity, 0644);
-MODULE_PARM_DESC(battery_capacity, "battery capacity (percentage)");
-
-module_param(battery_voltage, battery_voltage, 0644);
-MODULE_PARM_DESC(battery_voltage, "battery voltage (millivolts)");
-
-module_param(battery_charge_counter, battery_charge_counter, 0644);
-MODULE_PARM_DESC(battery_charge_counter,
-	"battery charge counter (microampere-hours)");
-
-module_param(battery_current, battery_current, 0644);
-MODULE_PARM_DESC(battery_current, "battery current (milliampere)");
 
 MODULE_DESCRIPTION("Power supply driver for testing");
 MODULE_AUTHOR("Anton Vorontsov <cbouatmailru@gmail.com>");
