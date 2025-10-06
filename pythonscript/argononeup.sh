@@ -201,6 +201,7 @@ sudo rm -Rf $INSTALLATIONFOLDER/ups/upsimg.tar.gz
 
 # Other utility scripts
 sudo wget $ARGONDOWNLOADSERVER/scripts/argondashboard.py -O $INSTALLATIONFOLDER/argondashboard.py --quiet
+sudo wget $ARGONDOWNLOADSERVER/scripts/argonpowerbutton.py -O $INSTALLATIONFOLDER/argonpowerbutton.py --quiet
 
 sudo wget $ARGONDOWNLOADSERVER/scripts/argon-versioninfo.sh -O $versioninfoscript --quiet
 sudo chmod 755 $versioninfoscript

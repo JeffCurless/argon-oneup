@@ -1,0 +1,57 @@
+#!/bin/bash
+echo "--------------------------"
+echo "Argon Configuration Tool"
+/etc/argon/argon-versioninfo.sh simple
+echo "--------------------------"
+get_number () {
+	read curnumber
+	if [ -z "$curnumber" ]
+	then
+		echo "-2"
+		return
+	elif [[ $curnumber =~ ^[+-]?[0-9]+$ ]]
+	then
+		if [ $curnumber -lt 0 ]
+		then
+			echo "-1"
+			return
+		elif [ $curnumber -gt 100 ]
+		then
+			echo "-1"
+			return
+		fi	
+		echo $curnumber
+		return
+	fi
+	echo "-1"
+	return
+}
+
+mainloopflag=1
+while [ $mainloopflag -eq 1 ]
+do
+	echo
+	echo "Choose Option:"
+	echo "  1. Get Battery Status"
+	echo "  2. Dashboard"
+	echo "  3. Uninstall"
+	echo ""
+	echo "  0. Exit"
+	echo -n "Enter Number (0-3):"
+	newmode=$( get_number )
+	if [ $newmode -eq 0 ]
+	then
+		echo "Thank you."
+		mainloopflag=0
+	elif [ $newmode -eq 1 ]
+	then
+		sudo /usr/bin/python3 /etc/argon/argononeupd.py GETBATTERY
+	elif [ $newmode -eq 2 ]
+	then
+		sudo /usr/bin/python3 /etc/argon/argondashboard.py
+	elif [ $newmode -eq 3 ]
+	then
+		/etc/argon/argon-uninstall.sh
+		mainloopflag=0
+	fi
+done
