@@ -129,18 +129,16 @@ def displayramcpu(stdscr, refcpu, rowstart, colstart):
 
 
 def displaytempfan(stdscr, rowstart, colstart):
-	print( f"displaytempfan( {stdscr}, {rowstart}, {colstart}  )" )
 	try:
 		outputlist = []
 		try:
-			if bus is not None:
-				fanspeed = argonregister_getfanspeed(bus)
+			if busobj is not None:
+				fanspeed = argonregister_getfanspeed(busobj)
 				fanspeedstr = "Off"
 				if fanspeed > 0:
 					fanspeedstr = str(fanspeed)+"%"
 				outputlist.append({"title": "Fan ", "value": fanspeedstr})
 		except:
-			outputlist.append( {"title":"Fan ", "value": 'Error!'})
 			pass
 		# Todo load from config
 		temperature = "C"
