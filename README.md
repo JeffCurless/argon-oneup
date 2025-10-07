@@ -22,10 +22,11 @@ A hacky little program to monitor nvme,fan and CPU temperature.
 ## Work that needs to be completed
 
 - [X] Get test_power.c code running and simualating a battery for the Raspberry PI
-- [ ] Remove all unneeded code from the driver, called oneUpPower.c
-- [ ] Fix the naming of all the internerals properly, and makes sure the battery tech, and manuacturer are correct
-- [ ] Port python battery code to C
-- [ ] Incorprate working C code into driver, and do all the plumbing
+- [X] Remove all unneeded code from the driver, called oneUpPower.c
+- [X] Fix the naming of all the internerals properly, and makes sure the battery tech, and manuacturer are correct
+- [X] Port python battery code to C
+- [X] Incorprate working C code into driver, and do all the plumbing
+- [ ] Review python code to see if there is anything else that needs to be moved over. 
 - [ ] Create an installer
 - [ ] Create an uninstaller
 
