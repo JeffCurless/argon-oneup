@@ -49,6 +49,8 @@ A hacky little program to monitor nvme,fan and CPU temperature.
 
 > [!NOTE]
 > This code is currently only supported on 64 bit Raspberry PI OS.  There is not current plan to make it operational on any other OS at this time.
+> Driver does not build under Trixie yet, as the kernel headers are not up to date...
+
 
 ## Pictures
 
