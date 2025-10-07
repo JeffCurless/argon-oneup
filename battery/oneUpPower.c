@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
-
+/*
+ * This driver was writtent to support the Argon40 1UP laptop.  I wanted to make sure that we could properly use the battery plugin.
+ *
+ * Author:  Jeff Curless
+ *
+ */
 
 /*
  * Based heavily on:
@@ -83,10 +88,16 @@ static int ac_online			= 1;	     // Are we connected to an external power source
 static bool module_initialized 		= false;		// Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;
 
+//
+// Properties for AC
+//
 static enum power_supply_property power_ac_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 };
 
+//
+// Properties supported to the Battery
+//
 static enum power_supply_property power_battery_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
@@ -108,12 +119,21 @@ static enum power_supply_property power_battery_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
+//
+// What Battery does the the AC object supply power to...
+//
 static char *ac_power_supplied_to[] = {
 	"BAT0",
 };
 
+//
+// All of the power supplies we are registering
+//
 static struct power_supply *power_supplies[ONEUP_POWER_NUM];
 
+//
+// The power descriptions for the supplies
+//
 static const struct power_supply_desc power_descriptions[] = {
 	[ONEUP_BATTERY] = {
 		.name = "BAT0",
@@ -132,6 +152,9 @@ static const struct power_supply_desc power_descriptions[] = {
 	},
 };
 
+//
+// Configurations
+//
 static const struct power_supply_config power_configs[] = {
         {   	/* battery */
 	},
@@ -142,13 +165,20 @@ static const struct power_supply_config power_configs[] = {
 	}, 
 };
 
-/*
- * set_power_states 
- *
- * Given the current state of the capacity and status of the AC plug, 
- * make sure we normalize the data associated with those levels.
- *
- */
+//
+// Potentially a method to shutdown the system when the battery is really low...
+//
+// static const char * const shutdown_argv[] = 
+//    { "/sbin/shutdown", "-h", "-P", "now", NULL };
+// call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
+//
+
+//
+// set_power_states 
+//
+// Given the current state of the capacity and status of the AC plug, 
+// make sure we normalize the data associated with those levels.
+//
 static void set_power_states( void )
 {
     int capacity = battery.capacity;
@@ -182,6 +212,14 @@ static void set_power_states( void )
     }
 }
 
+//
+// check_ac_power
+//
+// Check to see if the AC plug is connected or not.
+//
+// Parameters:
+//     client - A i2c object that is used to get data from the I2C bus.
+//
 static void check_ac_power( struct i2c_client *client )
 {
     int current_high;
@@ -202,6 +240,14 @@ static void check_ac_power( struct i2c_client *client )
     }
 }
 
+//
+// check_battery_state
+//
+// Determine that the current state of the battery is
+//
+// Parameters:
+//     client	- I2C device used to get information
+//
 static void check_battery_state( struct i2c_client *client )
 {
     int SOCPercent;
@@ -219,6 +265,25 @@ static void check_battery_state( struct i2c_client *client )
     }
 }
 
+//
+// system_monitor
+//
+// Monitor the power system associated with the laptop.  Need to monitor the AC line (is it plugged in or not),
+// and the current capacity of the battery.
+//
+// This code is called via a kernel thread, and executes approximatly once a second.  This timing can be modified,
+// however it should probably not be faster.
+//
+// Note:  The python code has some additional code that inspects the I2C device and profile.  This code will 
+// pobably need to be added here.  The issue is it appears to be quite timing sensitive.
+//
+// Parameters:
+//     args - Not used.
+//
+// Returns:
+//     -1   - if there was an error
+//     0    - no errors.
+//
 static int system_monitor( void *args )
 {
     struct i2c_client  *client  = NULL;
@@ -263,6 +328,9 @@ static int system_monitor( void *args )
 	schedule_timeout( HZ );
     }
 
+    //
+    // Cleanup
+    //
     if( client )
     {
         i2c_unregister_device( client );
@@ -274,10 +342,26 @@ static int system_monitor( void *args )
 	i2c_put_adapter( adapter );
 	adapter = NULL;
     }
-    pr_info( "system monitor is stopping...\n" );
+
+    pr_info( "System monitor is stopping...\n" );
     return 0;
 }
 
+//
+// get_ac_property
+//
+// When the value of a property is requested, this routine is called, and the
+// property is looked up and its value reuturned.
+//
+// Parameters:
+//     pst	- The power supply object
+//     psp	- The property we are looking for (as an integer)
+//     val	- A pointer to where the data should be stored.
+//
+// Returns:
+//     -EINVAL  - No such property, or not supported
+//     0        - Successfuly located the data
+//
 static int get_ac_property(struct power_supply *psy,
 		           enum power_supply_property psp,
 			   union power_supply_propval *val)
@@ -292,6 +376,23 @@ static int get_ac_property(struct power_supply *psy,
 	return 0;
 }
 
+//
+// get_battery_int_property
+//
+// When the value of a property is requested, this routine is called, and
+// the property is looked up and its value returned.
+//
+// This particular function simple returns the integer properties.
+//
+// Parmters:
+//     pst	- The power supply object
+//     psp	- The property we are looking for (as a integer)
+//     val	- A pointer to where th data should be stored.
+//
+// Returns:
+//     -EINVAL	- No such property, or not supported
+//     0	- Succssfully located the data
+//
 static int get_battery_int_property( struct power_supply *psy,
 		                     enum power_supply_property psp,
 				     union power_supply_propval *val )
@@ -349,6 +450,21 @@ static int get_battery_int_property( struct power_supply *psy,
 	return 0;
 }
 
+//
+// get_battery_property
+//
+// When the value of a property is requested, this routine is called, and the
+// property is looked up and its value reuturned.
+//
+// Parameters:
+//     pst	- The power supply object
+//     psp	- The property we are looking for (as an integer)
+//     val	- A pointer to where the data should be stored.
+//
+// Returns:
+//     -EINVAL  - No such property, or not supported
+//     0        - Successfuly located the data
+//
 static int get_battery_property(struct power_supply *psy,
 			        enum power_supply_property psp,
 				union power_supply_propval *val)
@@ -370,6 +486,15 @@ static int get_battery_property(struct power_supply *psy,
     return 0;
 }
 
+//
+// oneup_power_init
+//
+// Initialization code for the driver
+//
+// Returns:
+//     0 - On success
+//    -1 - Failure
+//
 static int __init oneup_power_init(void)
 {
 	int i;
@@ -394,6 +519,7 @@ static int __init oneup_power_init(void)
 	monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
 	if( monitor_task == NULL ){
 	    pr_err( "Could not start system_monitor, terminating.\n" );
+            ret = -EINVAL;
 	    goto failed;
 	}
 
@@ -413,6 +539,11 @@ failed:
 }
 module_init(oneup_power_init);
 
+//
+// oneup_power_exit
+//
+// Called when the driver exists
+//
 static void __exit oneup_power_exit(void)
 {
 	int i;
