@@ -50,3 +50,13 @@ A hacky little program to monitor nvme,fan and CPU temperature.
 > [!NOTE]
 > This code is currently only supported on 64 bit Raspberry PI OS.  There is not current plan to make it operational on any other OS at this time.
 
+## Pictures
+
+Charging!
+![PXL_20251007_022658734](https://github.com/user-attachments/assets/c9c634aa-ea34-414e-8537-9344ce612510)
+
+Discharging!
+![PXL_20251007_022637735](https://github.com/user-attachments/assets/2945eb4d-f3eb-48de-ad6c-6d7eab960f5c)
+
+
+
