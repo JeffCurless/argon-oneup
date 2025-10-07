@@ -1,11 +1,14 @@
+
+sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+ls /lib/modules/`uname -r`/kernel/drivers/power/supply/
 sudo insmod oneUpPower.ko
 
-ls -l /sys/class/power_supply/BAT0
-cat /sys/class/power_supply/BAT0/uevent
-cat /sys/class/power_supply/BAT0/capacity
-cat /sys/class/power_supply/BAT0/status
-
-ls -l /sys/class/power_supply/AC0
-cat /sys/class/power_supply/AC0/uevent
+#ls -l /sys/class/power_supply/BAT0
+#cat /sys/class/power_supply/BAT0/uevent
+#cat /sys/class/power_supply/BAT0/capacity
+#cat /sys/class/power_supply/BAT0/status
+#
+#ls -l /sys/class/power_supply/AC0
+#cat /sys/class/power_supply/AC0/ueven
 
 

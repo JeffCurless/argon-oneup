@@ -225,28 +225,28 @@ static int system_monitor( void *args )
     struct i2c_adapter *adapter = NULL;
     struct i2c_board_info board_info = {I2C_BOARD_INFO("argon40_battery", BATTERY_ADDR )};
 
-    pr_info( "Starting system monitor..." );
+    pr_info( "Starting system monitor...\n" );
  
     //
     // Get an adapter so we can make an i2c client...
     //
     adapter = i2c_get_adapter( I2C_BUS );
     if( adapter == NULL ){
-        pr_err( "Unable to get i2c adapter!" );
+        pr_err( "Unable to get i2c adapter!\n" );
 	return -1;
     }
-    pr_info( "Created an I2C adapter..." );
+    pr_info( "Created an I2C adapter...\n" );
 
     //
     // Build the i2c client...
     //
     client = i2c_new_client_device( adapter, &board_info );
     if( client == NULL ){
-        pr_err( "Unable to create i2c client1!" );
+        pr_err( "Unable to create i2c client!\n" );
 	return -1;
     }
 
-    pr_info( "Created an I2C client device..." );
+    pr_info( "Created an I2C client device...\n" );
 
     //
     // Monitor until we are done...
@@ -274,7 +274,7 @@ static int system_monitor( void *args )
 	i2c_put_adapter( adapter );
 	adapter = NULL;
     }
-    pr_info( "system monitor is stopping..." );
+    pr_info( "system monitor is stopping...\n" );
     return 0;
 }
 
@@ -393,6 +393,7 @@ static int __init oneup_power_init(void)
 
 	monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
 	if( monitor_task == NULL ){
+	    pr_err( "Could not start system_monitor, terminating.\n" );
 	    goto failed;
 	}
 
@@ -440,12 +441,6 @@ static void __exit oneup_power_exit(void)
 	module_initialized = false;
 }
 module_exit(oneup_power_exit);
-
-static inline void signal_power_supply_changed(struct power_supply *psy)
-{
-    if (module_initialized)
-        power_supply_changed(psy);
-}
 
 MODULE_DESCRIPTION("Power supply driver for Argon40 1UP");
 MODULE_AUTHOR("Jeff Curless <jeff@thecurlesses.com>");
