@@ -33,10 +33,13 @@ enum test_power_id {
 //
 // Useful definitions.  Note that the TOTAL_* definitions need to be worked out...
 //
-#define BLKDRV_NAME 			"oneUpPower"
+#define DRV_NAME 			"oneUpPower"
+#define PR_INFO( fmt, arg...) 		printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
+#define PR_ERR( fmt, arg... )		printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
 #define TOTAL_LIFE_SECONDS		(3 * 60 * 60)		// Time in seconds
 #define TOTAL_CHARGE			(4800 * 1000) 		// Power in micro Amp Hours, uAH
 #define TOTAL_CHARGE_FULL_SECONDS	(60 * 60)		// Time to full charge in seconds
+								
 
 //
 // I2C Addresses
@@ -85,8 +88,8 @@ static int get_ac_property(struct power_supply *psy,
 			   union power_supply_propval *val );
 
 static int ac_online			= 1;	     // Are we connected to an external power source?
-static bool module_initialized 		= false;		// Has the driver been initialized?
-static struct task_struct *monitor_task = NULL;
+static bool module_initialized 		= false;     // Has the driver been initialized?
+static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
 
 //
 // Properties for AC
@@ -159,9 +162,9 @@ static const struct power_supply_config power_configs[] = {
         {   	/* battery */
 	},
 	{
-		/* ac */
-		.supplied_to = ac_power_supplied_to,
-		.num_supplicants = ARRAY_SIZE(ac_power_supplied_to),
+	    /* ac */
+	    .supplied_to = ac_power_supplied_to,
+	    .num_supplicants = ARRAY_SIZE(ac_power_supplied_to),
 	}, 
 };
 
@@ -189,10 +192,10 @@ static void set_power_states( void )
     else if( capacity > 85 ){
 	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
     }
-    else if( capacity > 40 ){
+    else if( capacity > 75 ){
 	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
     }
-    else if( capacity > 30 ){
+    else if( capacity > 40 ){
 	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
     }
     else {
@@ -290,28 +293,28 @@ static int system_monitor( void *args )
     struct i2c_adapter *adapter = NULL;
     struct i2c_board_info board_info = {I2C_BOARD_INFO("argon40_battery", BATTERY_ADDR )};
 
-    pr_info( "Starting system monitor...\n" );
+    PR_INFO( "Starting system monitor...\n" );
  
     //
     // Get an adapter so we can make an i2c client...
     //
     adapter = i2c_get_adapter( I2C_BUS );
     if( adapter == NULL ){
-        pr_err( "Unable to get i2c adapter!\n" );
+        PR_ERR( "Unable to get i2c adapter!\n" );
 	return -1;
     }
-    pr_info( "Created an I2C adapter...\n" );
+    PR_INFO( "Created an I2C adapter...\n" );
 
     //
     // Build the i2c client...
     //
     client = i2c_new_client_device( adapter, &board_info );
     if( client == NULL ){
-        pr_err( "Unable to create i2c client!\n" );
+        PR_ERR( "Unable to create i2c client!\n" );
 	return -1;
     }
 
-    pr_info( "Created an I2C client device...\n" );
+    PR_INFO( "Created an I2C client device...\n" );
 
     //
     // Monitor until we are done...
@@ -343,7 +346,7 @@ static int system_monitor( void *args )
 	adapter = NULL;
     }
 
-    pr_info( "System monitor is stopping...\n" );
+    PR_INFO( "System monitor is stopping...\n" );
     return 0;
 }
 
@@ -442,7 +445,7 @@ static int get_battery_int_property( struct power_supply *psy,
 		val->intval = battery.voltage;
 		break;
 	default:
-		pr_info("%s: some properties deliberately report errors.\n",
+		PR_INFO("%s: some properties deliberately report errors.\n",
 			__func__);
 		return -EINVAL;
 	}
@@ -500,7 +503,7 @@ static int __init oneup_power_init(void)
 	int i;
 	int ret;
 
-	pr_info( "Starting Power monitor..." );
+	PR_INFO( "Starting Power monitor..." );
 	BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_supplies));
 	BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_configs));
 
@@ -509,7 +512,7 @@ static int __init oneup_power_init(void)
 						&power_descriptions[i],
 						&power_configs[i]);
 		if (IS_ERR(power_supplies[i])) {
-			pr_err("%s: failed to register %s\n", __func__,
+			PR_ERR("%s: failed to register %s\n", __func__,
 				power_descriptions[i].name);
 			ret = PTR_ERR(power_supplies[i]);
 			goto failed;
@@ -518,7 +521,7 @@ static int __init oneup_power_init(void)
 
 	monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
 	if( monitor_task == NULL ){
-	    pr_err( "Could not start system_monitor, terminating.\n" );
+	    PR_ERR( "Could not start system_monitor, terminating.\n" );
             ret = -EINVAL;
 	    goto failed;
 	}
@@ -563,7 +566,7 @@ static void __exit oneup_power_exit(void)
 	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
 	    power_supply_changed(power_supplies[i]);
 	
-	pr_info("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
+	PR_INFO("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
 	ssleep(10);
 
 	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)

@@ -172,7 +172,7 @@ def getNVMETemp(device : str) -> float:
 def argonsysinfo_kbstr(kbval, wholenumbers = True):
     remainder = 0
     suffixidx = 0
-    suffixlist = ["KiB", "MiB", "GiB", "TiB"]
+    suffixlist = ["B","KiB", "MiB", "GiB", "TiB"]
     while kbval > 1023 and suffixidx < len(suffixlist):
         remainder = kbval % 1024
         kbval     = kbval // 1024
