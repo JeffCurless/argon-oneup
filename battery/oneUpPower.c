@@ -36,9 +36,9 @@ enum test_power_id {
 #define DRV_NAME 			"oneUpPower"
 #define PR_INFO( fmt, arg...) 		printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
 #define PR_ERR( fmt, arg... )		printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
-#define TOTAL_LIFE_SECONDS		(3 * 60 * 60)		// Time in seconds
+#define TOTAL_LIFE_SECONDS		(6 * 60 * 60)		// Time in seconds
 #define TOTAL_CHARGE			(4800 * 1000) 		// Power in micro Amp Hours, uAH
-#define TOTAL_CHARGE_FULL_SECONDS	(60 * 60)		// Time to full charge in seconds
+#define TOTAL_CHARGE_FULL_SECONDS	(((2*60)+30) * 60)	// Time to full charge in seconds
 								
 
 //
@@ -87,6 +87,10 @@ static int get_ac_property(struct power_supply *psy,
 		           enum power_supply_property psp,
 			   union power_supply_propval *val );
 
+//
+// Globals
+//
+static int critical_power_level         = 5;	     // Default setting is 5% of power left for critical
 static int ac_online			= 1;	     // Are we connected to an external power source?
 static bool module_initialized 		= false;     // Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
@@ -159,7 +163,7 @@ static const struct power_supply_desc power_descriptions[] = {
 // Configurations
 //
 static const struct power_supply_config power_configs[] = {
-        {   	/* battery */
+        {   /* battery */
 	},
 	{
 	    /* ac */
@@ -167,14 +171,6 @@ static const struct power_supply_config power_configs[] = {
 	    .num_supplicants = ARRAY_SIZE(ac_power_supplied_to),
 	}, 
 };
-
-//
-// Potentially a method to shutdown the system when the battery is really low...
-//
-// static const char * const shutdown_argv[] = 
-//    { "/sbin/shutdown", "-h", "-P", "now", NULL };
-// call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
-//
 
 //
 // set_power_states 
@@ -223,7 +219,11 @@ static void set_power_states( void )
 // Parameters:
 //     client - A i2c object that is used to get data from the I2C bus.
 //
-static void check_ac_power( struct i2c_client *client )
+// Returns:
+//     True   - If the system is plugged in
+//     False  - If we are soley on battery power
+//
+static int check_ac_power( struct i2c_client *client )
 {
     int current_high;
     int plugged_in;
@@ -241,6 +241,8 @@ static void check_ac_power( struct i2c_client *client )
 	set_power_states();
 	//power_supply_changed( power_supplies[ONEUP_AC] );
     }
+
+    return plugged_in;
 }
 
 //
@@ -251,7 +253,10 @@ static void check_ac_power( struct i2c_client *client )
 // Parameters:
 //     client	- I2C device used to get information
 //
-static void check_battery_state( struct i2c_client *client )
+// Returns:
+//     Battery State of Charge in Percentage
+//
+static int check_battery_state( struct i2c_client *client )
 {
     int SOCPercent;
 
@@ -264,8 +269,24 @@ static void check_battery_state( struct i2c_client *client )
     if( battery.capacity != SOCPercent ){
         battery.capacity = SOCPercent;
 	set_power_states();
+	PR_INFO( "Battery State of charge is %d%%\n",SOCPercent ); 
 	power_supply_changed( power_supplies[ONEUP_BATTERY] );
     }
+
+    return SOCPercent;
+}
+
+//
+// shutdown_helper
+//
+// Shutdown the system when we are critically low on power and not 
+// plugged in.
+//
+static void shutdown_helper( void ){
+    static char * shutdown_argv[] = 
+                          { "/sbin/shutdown", "-h", "-P", "now", NULL };
+    call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
+    
 }
 
 //
@@ -292,6 +313,8 @@ static int system_monitor( void *args )
     struct i2c_client  *client  = NULL;
     struct i2c_adapter *adapter = NULL;
     struct i2c_board_info board_info = {I2C_BOARD_INFO("argon40_battery", BATTERY_ADDR )};
+    int    soc;
+    int    plugged_in;
 
     PR_INFO( "Starting system monitor...\n" );
  
@@ -324,10 +347,15 @@ static int system_monitor( void *args )
 	if( kthread_should_stop() ) 
 	    break;
 
-        check_ac_power( client );
-	check_battery_state( client );
+        plugged_in = check_ac_power( client );
+	soc        = check_battery_state( client );
 
 	set_current_state( TASK_INTERRUPTIBLE );
+        if( !plugged_in && (soc <= critical_power_level) ){
+	    // not pluggged in and below critical state, shutdown.
+	    PR_INFO( "Performing system shutdown unplugged and power is at %d\n",soc);
+	    shutdown_helper();
+	}
 	schedule_timeout( HZ );
     }
 
