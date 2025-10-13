@@ -21,6 +21,17 @@ To remove it:
 ```
 
 Once the driver is loaded, go to the task bar and add a battery.  If there is already a battery plugin loaded, remove it, exit, and re-add.
+
+## Monitor
+
+Two monitoring applications:
+
+### oneUpMon
+Monitor the use of system resources, graphically
+
+### simple_monitor
+A simple monitor that dislays some system utilization
+
 ## config
 
 This directory contains changes I make to the /boot/firmware/config.txt file
