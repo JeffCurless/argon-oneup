@@ -42,9 +42,9 @@ class DriveStat:
     FLUSH_TICKS     = 16
     
     def __init__( self, device:str ):
-        self.last  = []
-        self.stats = []
-        self.device = device
+        self._last : list[int]  = []
+        self._stats : list[int] = []
+        self._device = device
         self._readStats()
     
     def _readStats( self ):
@@ -57,12 +57,12 @@ class DriveStat:
         
         '''
         try:
-            self.last = self.stats
-            with open( f"/sys/block/{self.device}/stat", "r") as f:
-                stats = f.readline().strip().split(" ")
-                self.stats = [int(l) for l in stats if l]
+            self._last = self._stats
+            with open( f"/sys/block/{self._device}/stat", "r") as f:
+                curStats = f.readline().strip().split(" ")
+                self._stats = [int(l) for l in curStats if l]
         except Exception as e:
-            print( f"Failure reading disk statistics for {device} error {e}" )
+            print( f"Failure reading disk statistics for {self._device} error {e}" )
         
     def _getStats( self ) -> list[int]:
         '''
@@ -71,12 +71,14 @@ class DriveStat:
         Returns:
             An array containing all of the data colleected about the device.
         '''
+        curData : list[int] = []
+        
         self._readStats()
-        if self.last == []:
-            data = self.stats[:]
+        if self._last == []:
+            curData = self._stats[:]
         else:
-            data = [ d-self.last[i] for i,d in enumerate( self.stats ) ]
-        return data
+            curData = [ d-self._last[i] for i,d in enumerate( self._stats ) ]
+        return curData
         
     def readAllStats( self ) -> list[int]:
         '''
@@ -96,9 +98,9 @@ class DriveStat:
     def discardSectors( self ) -> int:
         return self._getStats()[DriveStat.DISCARD_SECTORS]
         
-    def readWriteSectors( self ) -> (int,int):
-        data = self._getStats()
-        return (data[DriveStat.READ_SECTORS],data[DriveStat.WRITE_SECTORS])
+    def readWriteSectors( self ) -> tuple[int,int]:
+        curData = self._getStats()
+        return (curData[DriveStat.READ_SECTORS],curData[DriveStat.WRITE_SECTORS])
     
 
 def setupTemperatureObject():
@@ -112,13 +114,13 @@ def setupTemperatureObject():
     Return:
         A CPU temperature object
     '''
-    cpuTemp = None
+    cpuTempObj = None
     try:
-        cpuTemp = CPUTemperature()
+        cpuTempObj = CPUTemperature()
     except Exception as error:
-        log.error( f"Error creating CPU temperature object, error is {error}" )
+        print( f"Error creating CPU temperature object, error is {error}" )
 
-    return cpuTemp
+    return cpuTempObj
 
 def getFanSpeed() -> int:
     '''
@@ -131,10 +133,10 @@ def getFanSpeed() -> int:
     fanSpeed = 0
     try:
         command = os.popen( 'cat /sys/devices/platform/cooling_fan/hwmon/*/fan1_input' )
-        fanSpeed = command.read().strip()
+        fanSpeed = int(command.read().strip())
     except:
         pass
-    return int(fanSpeed)
+    return fanSpeed
 
 def getNVMETemp(device : str) -> float:
     '''
@@ -147,11 +149,13 @@ def getNVMETemp(device : str) -> float:
         The temperature as a float
     '''
     smartOutRaw = ""
+    cmd = f'smartctl -A /dev/{device}'
     try:
-        command = os.popen( f'smartctl -A /dev/{device}' )
+        command = os.popen( cmd )
         smartOutRaw = command.read()
-    except Exception as e:
-        return 0
+    except Exception as error:
+        print( f"Could not launch {cmd} error is {error}" )
+        return 0.0
     finally:
         command.close()
         
@@ -169,12 +173,10 @@ def getNVMETemp(device : str) -> float:
         
     return float(0.0)
     
-def argonsysinfo_kbstr(kbval, wholenumbers = True):
-    remainder = 0
+def argonsysinfo_kbstr(kbval):
     suffixidx = 0
     suffixlist = ["B","KiB", "MiB", "GiB", "TiB"]
     while kbval > 1023 and suffixidx < len(suffixlist):
-        remainder = kbval % 1024
         kbval     = kbval // 1024
         suffixidx = suffixidx + 1
     return f"{kbval} {suffixlist[suffixidx]}"
@@ -191,4 +193,4 @@ while True:
     data = stats.readWriteSectors()
     print( f"Read : {argonsysinfo_kbstr(data[0]*512)}/s" )
     print( f"Write: {argonsysinfo_kbstr(data[1]*512)}/s" )
-    time.sleep(1) 
+    time.sleep(1)
