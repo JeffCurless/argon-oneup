@@ -7,14 +7,13 @@ Requires: PyQt5 (including QtCharts)
 
 """
 
-import os
 import sys
 from systemsupport import systemData, CPULoad
 
 # --------------------------
 # Globals
 # --------------------------
-sysdata = None
+sysdata = systemData()
 cpuload = CPULoad()
 
 # --------------------------
@@ -23,7 +22,7 @@ cpuload = CPULoad()
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPainter
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QLabel
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
 
 class RollingChart(QWidget):
@@ -39,7 +38,7 @@ class RollingChart(QWidget):
     def __init__(self, title: str, series_defs: list[tuple], y_min: float, y_max: float, window: int = 120, parent=None):
         super().__init__(parent)
         
-        self.window = window
+        self.pointWindow = window
         self.xpos   = window - 1
         self.chart  = QChart()
         
@@ -60,7 +59,7 @@ class RollingChart(QWidget):
         # want is the tick count etc, but NO lable on the axis.  There does not
         # appear to be a way to do that.
         self.axis_x = QValueAxis()
-        self.axis_x.setRange(0, self.window)
+        self.axis_x.setRange(0, self.pointWindow)
         self.axis_x.setMinorTickCount( 2 )
         self.axis_x.setTickCount( 10 )
         self.axis_x.setLabelFormat("%d")
@@ -108,7 +107,7 @@ class RollingChart(QWidget):
                 pass
             
         # Trim series to rolling window
-        min_x_to_keep = max(0, self.xpos - self.window)
+        min_x_to_keep = max(0, self.xpos - self.pointWindow)
         self.axis_x.setRange(min_x_to_keep, self.xpos)
         
         for s in self.series:
@@ -213,7 +212,7 @@ class RollingChartDynamic(RollingChart):
                 pass
             
         # Trim series to rolling window
-        min_x_to_keep = max(0, self.xpos - self.window)
+        min_x_to_keep = max(0, self.xpos - self.pointWindow)
         self.axis_x.setRange(min_x_to_keep, self.xpos)
             
         if scaleUp:
@@ -372,6 +371,5 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    sysdata = systemData()
     main()
 

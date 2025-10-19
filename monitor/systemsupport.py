@@ -58,7 +58,7 @@ class DriveStats:
         '''
         try:
             self._last = self._stats
-            with open( f"/sys/block/{self._device}/stat", "r") as f:
+            with open( f"/sys/block/{self._device}/stat", "r",encoding="utf8") as f:
                 curStats = f.readline().strip().split(" ")
                 self._stats = [int(l) for l in curStats if l]
         except Exception as e:
@@ -114,7 +114,7 @@ class systemData:
         return self._cpuTemp.temperature
 
     @property
-    def fanSpeed( self ) -> int:
+    def fanSpeed( self ) -> float:
         speed= 0
         try:
             command = os.popen( 'cat /sys/devices/platform/cooling_fan/hwmon/*/fan1_input' )
@@ -124,7 +124,7 @@ class systemData:
         finally:
             command.close()
 
-        return speed
+        return float(speed)
 
     @property
     def driveTemp(self) -> float:
@@ -155,9 +155,9 @@ class systemData:
 
     @property
     def driveStats(self) -> tuple[float,float]:
-        data = self._stats.readWriteSectors()
-        readMB = (float(data[0]) * 512.0) #/ (1024.0 * 1024.0)
-        writeMB = (float(data[1]) * 512.0) #/ (1024.0 * 1024.0)
+        _data = self._stats.readWriteSectors()
+        readMB = (float(_data[0]) * 512.0) #/ (1024.0 * 1024.0)
+        writeMB = (float(_data[1]) * 512.0) #/ (1024.0 * 1024.0)
         return (readMB, writeMB )
 
 class CPULoad:
@@ -178,12 +178,20 @@ class CPULoad:
        This is usually not an issue.
     '''
     def __init__( self ):
-        self._previousData : dict[str,tuple] = self._getRawData()
+        #
+        # Get the current data
+        #
+        self._previousData : dict[str,tuple[int,int]] = self._getRawData()
         self._names : list[str] = []
-        for item in self._previousData:
-            self._names.append( item )
+        #
+        # For each CPU, reset the total and idle amount, and create the list
+        # of names
+        #
+        for _item in self._previousData:
+            self._previousData[_item] = (0,0)
+            self._names.append(_item)
         
-    def _getRawData( self ) -> dict[str : tuple]:
+    def _getRawData( self ) -> dict[str,tuple[int,int]]:
         '''
         Obtain the raw CPU data from the system (located in /prop/stat), and
         return just the cpu0 -> cpux values.  No assumption is made on the number of
@@ -194,21 +202,21 @@ class CPULoad:
             time and idle time are use to determine the percent utilization of the system.
         '''
         result = {}
-        with open( "/proc/stat", "r") as f:
+        with open( "/proc/stat", "r",encoding="utf8") as f:
             allLines = f.readlines()
             for line in allLines:
                 cpu = line.replace('\t', ' ').strip().split()
                 if (len(cpu[0]) > 3) and (cpu[0][:3] == "cpu"):
                     total = 0
                     idle  = 0
-                    for i in range( 1, len(cpu)):
-                        total += int(cpu[i])
-                        if i == 4 or i == 5:
-                            idle += int(cpu[i])
+                    for _index in range( 1, len(cpu)):
+                        total += int(cpu[_index])
+                        if _index == 4 or _index == 5:
+                            idle += int(cpu[_index])
                     result[cpu[0]] = (total,idle)
         return result
 
-    def getPercentages( self ) -> dict[ str : float ]:
+    def getPercentages( self ) -> dict[str,float]:
         '''
         Obtain the percent CPU utilization of the system for a period of time.
         
@@ -227,11 +235,11 @@ class CPULoad:
         '''
         results = {}
         current = self._getRawData()
-        for item in current:
-            total = current[item][0] - self._previousData[item][0]
-            idle  = current[item][1] - self._previousData[item][1]
+        for _item in current:
+            total = current[_item][0] - self._previousData[_item][0]
+            idle  = current[_item][1] - self._previousData[_item][1]
             percent = ((total - idle)/total) * 100
-            results[item] = round(percent,2)
+            results[_item] = round(percent,2)
         self._previousData = current
         return results
     
@@ -266,7 +274,7 @@ if __name__ == "__main__":
     print( f"Number of CPU's = {len(load)}" )
     for i in range(10):
         time.sleep( 1 )
-        percentage : dict[str:float] = load.getPercentages()
+        percentage : dict[str,float] = load.getPercentages()
         print( f"percentage: {percentage}" )
         for item in percentage:
             print( f"{item} : {percentage[item]:.02f}" )
