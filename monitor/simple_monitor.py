@@ -13,7 +13,7 @@ Replace the stub return values with your real implementations later.
 
 import sys
 from typing import Tuple
-from oneUpSupport import systemData
+from systemsupport import systemData, CPULoad
 
 sysdata = systemData()
 
