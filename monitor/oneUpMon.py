@@ -328,23 +328,25 @@ class MonitorWindow(QMainWindow):
         exception, so everything needs to be wrapped in a handler.
         
         '''
-        # Obtain the CPU temperature
-        try:
-            cpu_c = float(sysdata.CPUTemperature)
-        except Exception:
-            cpu_c = None
-
+            
         # Obtain the current fan speed
         try:
             fan_speed = sysdata.fanSpeed
         except Exception:
             fan_speed = None
 
+        temperatures = []
+        try:
+            temperatures.append( float(sysdata.CPUTemperature) )
+        except Exception:
+            temperatures.append( 0.0 )
+            
         # Obtain the NVMe device temperature
         try:
-            nvme_c = sysdata.driveTemp
+            for _drive in multiDrive.drives:
+                temperatures.append( multiDrive.driveTemp( _drive ) )
         except Exception:
-            nvme_c = None
+            temperatures = [ 0.0 for _ in multiDrive.drives ]
 
         # Obtain the NVMe Device read and write rates
         try:
@@ -364,7 +366,7 @@ class MonitorWindow(QMainWindow):
             values = [ None for name in cpuload.cpuNames ]
 
         # Append to charts
-        self.cpu_chart.append([cpu_c,nvme_c])
+        self.cpu_chart.append( temperatures )
         self.fan_chart.append([fan_speed])
         self.io_chart.append( rwData )
         self.use_chart.append( values )

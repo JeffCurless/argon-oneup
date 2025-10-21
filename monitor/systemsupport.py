@@ -191,6 +191,32 @@ class multiDriveStat():
         except:
             return 0
         
+    def driveTemp(self,_drive) -> float:
+        smartOutRaw = ""
+        cmd = f'sudo smartctl -A /dev/{_drive}'
+        try:
+            command = os.popen( cmd )
+            smartOutRaw = command.read()
+        except Exception as error:
+            print( f"Could not launch {cmd} error is {error}" )
+            return 0.0
+        finally:
+            command.close()
+        
+        smartOut = [ l for l in smartOutRaw.split('\n') if l]
+        for smartAttr in ["Temperature:","194","190"]:
+            try:
+                line = [l for l in smartOut if l.startswith(smartAttr)][0]
+                parts = [p for p in line.replace('\t',' ').split(' ') if p]
+                if smartAttr == "Temperature:":
+                    return float(parts[1])
+                else:
+                    return float(parts[0])
+            except IndexError:
+                pass
+        
+        return float(0.0)
+        
     def readWriteSectors( self )-> dict[str,tuple[int,int]]:
         '''
         Obtain the number of sectors read and written since the last
