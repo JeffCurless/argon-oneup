@@ -43,8 +43,8 @@ class DriveStats:
     
     def __init__( self, device:str ):
         self._last : list[int]  = []
-        self._stats : list[int] = []
         self._device = device
+        self._stats : list[int] = []
         self._readStats()
     
     def _readStats( self ):
@@ -58,7 +58,7 @@ class DriveStats:
         '''
         try:
             self._last = self._stats
-            with open( f"/sys/block/{self._device}/stat", "r",encoding="utf8") as f:
+            with open( f"/sys/block/{self._device}/stat", "r", encoding="utf8") as f:
                 curStats = f.readline().strip().split(" ")
                 self._stats = [int(l) for l in curStats if l]
         except Exception as e:
@@ -79,7 +79,11 @@ class DriveStats:
         else:
             curData = [ d-self._last[i] for i,d in enumerate( self._stats ) ]
         return curData
-        
+
+    @property
+    def name(self) -> str:
+        return self._device
+    
     def readAllStats( self ) -> list[int]:
         '''
         read all of the drive statisics from sysfs for the device.
@@ -102,10 +106,118 @@ class DriveStats:
         curData = self._getStats()
         return (curData[DriveStats.READ_SECTORS],curData[DriveStats.WRITE_SECTORS])
     
+    def readWriteBytes( self ) -> tuple[int,int]:
+        curData = self._getStats()
+        return (curData[DriveStats.READ_SECTORS]*512,curData[DriveStats.WRITE_SECTORS]*512)
+
+class multiDriveStat():
+    '''
+    This class allow for monitoring multiple drives at the same time. There are
+    two mechanisms used to create this class.  The first is with no parameters,
+    in this case, the system will automatically grab all of the drives and setup
+    to monitor them.
+    
+    The second method is to provide this class with a list of drives to monitor.
+    In this cased all of the drives that are NOT on that list are filtered out and
+    only the drives left will be processed.
+    
+    If there is a missing drive from the filter, that drive is eliminated.
+    
+    Parameters:
+        driveList - if None, generate a list by asking the system
+                   - Otherwise remove all drives from the generated list that
+                     are not in the monitor list.
+    '''
+    def __init__(self,driveList:list[str] | None  = None):
+        #
+        # Get all drives
+        #
+        with os.popen( 'lsblk -o NAME,SIZE,TYPE | grep disk') as command:
+            lsblk_raw = command.read()
+            lsblk_out = [ l for l in lsblk_raw.split('\n') if l]
+            self._driveInfo = {}
+            for l in lsblk_out:
+                _item = l.split()
+                self._driveInfo[_item[0]] = _item[1]
+        # filter out drives
+        if driveList is not None:
+            _temp = {}
+            for _drive in driveList:
+                try:
+                    _temp[_drive] = self._driveInfo[_drive]
+                except:
+                    print( f"Filtering out drive {_drive}, not currently connected to system." )
+            self._driveInfo = _temp
+        self._stats = [ DriveStats(_) for _ in self._driveInfo ]
+            
+    @property
+    def drives(self) -> list[str]:
+        '''
+        This attribute is used to list all of the drives that are being monitored
+        
+        Returns:
+            A list of drives
+        '''
+        drives = [ _ for _ in self._driveInfo]
+        return drives
+    
+    def driveSize( self, _drive ) -> int:
+        '''
+        This function is called to obtain the size of the drive requested.
+        
+        Parameters:
+            _drive - the drive to lookup
+            
+        Returns:
+            The size in bytes, or 0 if the drive does not exist
+        '''
+        try:
+            factor = self._driveInfo[_drive][-1:]
+            size   = float(self._driveInfo[_drive][:-1])
+            match factor:
+                case 'T':
+                    size *= 1024 * 1024 * 1024 * 1024
+                case 'G':
+                    size *= 1024 * 1024 * 1024
+                case 'M':
+                    size *= 1024 * 1024
+                case 'K':
+                    size *= 1024
+                case _:
+                    pass
+            size = int(size/512)
+            size *= 512
+            return size
+        except:
+            return 0
+        
+    def readWriteSectors( self )-> dict[str,tuple[int,int]]:
+        '''
+        Obtain the number of sectors read and written since the last
+        time this function as called.
+        
+        Returns:
+             A dictionary of the data, they key is the drive name, the value is the
+             read/write tuple.
+        '''
+        curData = {}
+        for _ in self._stats:
+            curData[_.name] = _.readWriteSectors()
+        return curData
+    
+    def readWriteBytes( self ) -> dict[str,tuple[int,int]]:
+        '''
+        Just like the readWriteSectors function but returns the data in Bytes
+        
+        '''
+        curData = {}
+        for _ in self._stats:
+            curData[_.name] = _.readWriteBytes()
+        return curData
 
 class systemData:
-    def __init__( self, drive : str = 'nvme0n1' ):
-        self._drive   = drive
+    def __init__( self, _drive : str = 'nvme0n1' ):
+        self._drive   = _drive
         self._cpuTemp = CPUTemperature()
         self._stats   = DriveStats( self._drive )
 
@@ -156,8 +268,8 @@ class systemData:
     @property
     def driveStats(self) -> tuple[float,float]:
         _data = self._stats.readWriteSectors()
-        readMB = (float(_data[0]) * 512.0) #/ (1024.0 * 1024.0)
-        writeMB = (float(_data[1]) * 512.0) #/ (1024.0 * 1024.0)
+        readMB = (float(_data[0]) * 512.0)
+        writeMB = (float(_data[1]) * 512.0)
         return (readMB, writeMB )
 
 class CPULoad:
@@ -177,7 +289,7 @@ class CPULoad:
        
        This is usually not an issue.
     '''
-    def __init__( self ):
+    def __init__( self ) -> None:
         #
         # Get the current data
         #
@@ -202,7 +314,7 @@ class CPULoad:
             time and idle time are use to determine the percent utilization of the system.
         '''
         result = {}
-        with open( "/proc/stat", "r",encoding="utf8") as f:
+        with open("/proc/stat", "r",encoding="utf8") as f:
             allLines = f.readlines()
             for line in allLines:
                 cpu = line.replace('\t', ' ').strip().split()
@@ -272,10 +384,16 @@ if __name__ == "__main__":
     
     load = CPULoad()
     print( f"Number of CPU's = {len(load)}" )
-    for i in range(10):
+    for i in range(2):
         time.sleep( 1 )
         percentage : dict[str,float] = load.getPercentages()
         print( f"percentage: {percentage}" )
         for item in percentage:
             print( f"{item} : {percentage[item]:.02f}" )
+    
+    test = multiDriveStat(["nvme0n1","sda","sdb"])
+    print( test.drives )
+    for drive in test.drives:
+        print( f"Drive {drive} size is {test.driveSize( drive )}" )
+    print( test.readWriteSectors() )
     
