@@ -8,13 +8,14 @@ Requires: PyQt5 (including QtCharts)
 """
 
 import sys
-from systemsupport import systemData, CPULoad
+from systemsupport import systemData, CPULoad, multiDriveStat
 
 # --------------------------
 # Globals
 # --------------------------
 sysdata = systemData()
 cpuload = CPULoad()
+multiDrive = multiDriveStat()
 
 # --------------------------
 # UI
@@ -277,12 +278,12 @@ class MonitorWindow(QMainWindow):
             window=120
             )
         
+        series = [("CPU", None)]
+        for name in multiDrive.drives:
+            series.append( (name,None) )
         self.cpu_chart = RollingChart(
             title="Temperature (°C)",
-            series_defs=[
-                ("CPU", None),
-                ("NVMe", None),
-                ],
+            series_defs= series,
             y_min=20, y_max=80,
             window=window
             )
@@ -294,12 +295,14 @@ class MonitorWindow(QMainWindow):
             window=window
         )
 
+        series = []
+        for name in multiDrive.drives:
+            series.append( (f"{name} Read", None) )
+            series.append( (f"{name} Write", None ) )
+            
         self.io_chart = RollingChartDynamic(
             title="Disk I/O",
-            series_defs=[
-                ("Read", None),
-                ("Write", None),
-            ],
+            series_defs=series,
             range_y=[("Bytes/s", 1),("KiB/s",1024),("MiB/s", 1024*1024),("GiB/s",1024*1024*1024)],
             window=window,
         )
@@ -325,31 +328,35 @@ class MonitorWindow(QMainWindow):
         exception, so everything needs to be wrapped in a handler.
         
         '''
-        # Obtain the CPU temperature
-        try:
-            cpu_c = float(sysdata.CPUTemperature)
-        except Exception:
-            cpu_c = None
-
+            
         # Obtain the current fan speed
         try:
             fan_speed = sysdata.fanSpeed
         except Exception:
             fan_speed = None
 
+        temperatures = []
+        try:
+            temperatures.append( float(sysdata.CPUTemperature) )
+        except Exception:
+            temperatures.append( 0.0 )
+            
         # Obtain the NVMe device temperature
         try:
-            nvme_c = sysdata.driveTemp
+            for _drive in multiDrive.drives:
+                temperatures.append( multiDrive.driveTemp( _drive ) )
         except Exception:
-            nvme_c = None
+            temperatures = [ 0.0 for _ in multiDrive.drives ]
 
         # Obtain the NVMe Device read and write rates
         try:
-            read_mb, write_mb = sysdata.driveStats
-            read_mb = float(read_mb)
-            write_mb = float(write_mb)
-        except Exception:
-            read_mb, write_mb = None, None
+            rwData = []
+            drives = multiDrive.readWriteBytes()
+            for drive in drives:
+                rwData.append( float(drives[drive][0]))
+                rwData.append( float(drives[drive][1]))
+        except Exception :
+            rwData = [ None, None ]
             
         # Get the CPU load precentages
         try:
@@ -359,9 +366,9 @@ class MonitorWindow(QMainWindow):
             values = [ None for name in cpuload.cpuNames ]
 
         # Append to charts
-        self.cpu_chart.append([cpu_c,nvme_c])
+        self.cpu_chart.append( temperatures )
         self.fan_chart.append([fan_speed])
-        self.io_chart.append([read_mb, write_mb])
+        self.io_chart.append( rwData )
         self.use_chart.append( values )
 
 def main():
