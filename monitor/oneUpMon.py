@@ -8,12 +8,12 @@ Requires: PyQt5 (including QtCharts)
 """
 
 import sys
-from systemsupport import systemData, CPULoad, multiDriveStat
+from systemsupport import CPUInfo, CPULoad, multiDriveStat
 
 # --------------------------
 # Globals
 # --------------------------
-sysdata = systemData()
+cpuinfo = CPUInfo()
 cpuload = CPULoad()
 multiDrive = multiDriveStat()
 
@@ -331,13 +331,13 @@ class MonitorWindow(QMainWindow):
             
         # Obtain the current fan speed
         try:
-            fan_speed = sysdata.fanSpeed
+            fan_speed = cpuinfo.CPUFanSpeed
         except Exception:
             fan_speed = None
 
         temperatures = []
         try:
-            temperatures.append( float(sysdata.CPUTemperature) )
+            temperatures.append( float(cpuinfo.temperature) )
         except Exception:
             temperatures.append( 0.0 )
             
