@@ -29,6 +29,9 @@ Two monitoring applications:
 ### oneUpMon
 Monitor the use of system resources, graphically
 
+- [ ] Modify code to support multiple Drives for read/write rate and temperature
+- [ ] Add support for not moitoring some drives.  For instance, monitor a raid device for performance, but not temperature
+      
 ### simple_monitor
 A simple monitor that dislays some system utilization
 
