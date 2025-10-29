@@ -33,21 +33,21 @@ enum test_power_id {
 //
 // Useful definitions.  Note that the TOTAL_* definitions need to be worked out...
 //
-#define DRV_NAME 			"oneUpPower"
-#define PR_INFO( fmt, arg...) 		printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
-#define PR_ERR( fmt, arg... )		printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
-#define TOTAL_LIFE_SECONDS		(6 * 60 * 60)		// Time in seconds
-#define TOTAL_CHARGE			(4800 * 1000) 		// Power in micro Amp Hours, uAH
-#define TOTAL_CHARGE_FULL_SECONDS	(((2*60)+30) * 60)	// Time to full charge in seconds
+#define DRV_NAME                    "oneUpPower"
+#define PR_INFO( fmt, arg...)       printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
+#define PR_ERR( fmt, arg... )       printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
+#define TOTAL_LIFE_SECONDS          (6 * 60 * 60)		// Time in seconds
+#define TOTAL_CHARGE                (4800 * 1000) 		// Power in micro Amp Hours, uAH
+#define TOTAL_CHARGE_FULL_SECONDS   (((2*60)+30) * 60)	// Time to full charge in seconds
 								
 
 //
 // I2C Addresses
 //
 #define I2C_BUS			0x01
-#define BATTERY_ADDR	        0x64
+#define BATTERY_ADDR	    0x64
 #define CURRENT_HIGH_REG	0x0E
-#define CURRENT_LOW_REG		0x0F
+#define CURRENT_LOW_REG	0x0F
 #define SOC_HIGH_REG		0x04
 #define SOC_LOW_REG		0x05
 
@@ -55,20 +55,20 @@ enum test_power_id {
 // Needed data structures
 //
 struct PowerStatus {
-    int status;			// Status of the power supply
-    int capacity;		// Capacity in percentage
-    int capacity_level;		// What level are we at, CRITICAL,LOW,NORMAL,HIGH,FULL
-    int health;			// State of the battery
-    int present;		// Is the battery present (always YES)
-    int technology;		// What technology is the battery (LION)
-    int timeleft;		// How much time to we have left in seconds
-    int temperature;		// What is the battery temperature
-    int voltage;		// What is the current voltage of the battery
+    int status;         // Status of the power supply
+    int capacity;       // Capacity in percentage
+    int capacity_level; // What level are we at, CRITICAL,LOW,NORMAL,HIGH,FULL
+    int health;         // State of the battery
+    int present;        // Is the battery present (always YES)
+    int technology;     // What technology is the battery (LION)
+    int timeleft;       // How much time to we have left in seconds
+    int temperature;    // What is the battery temperature
+    int voltage;        // What is the current voltage of the battery
  
 } battery = {
-	.status   	= POWER_SUPPLY_STATUS_DISCHARGING,
-	.capacity 	= 90,
-        .capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH,
+    .status             = POWER_SUPPLY_STATUS_DISCHARGING,
+    .capacity           = 100,
+    .capacity_level     = POWER_SUPPLY_CAPACITY_LEVEL_HIGH,
 	.health         = POWER_SUPPLY_HEALTH_GOOD,
 	.present        = 1,
 	.technology     = POWER_SUPPLY_TECHNOLOGY_LION,
@@ -81,18 +81,18 @@ struct PowerStatus {
 // Forward declairations
 //
 static int get_battery_property(struct power_supply *psy,
-		                enum power_supply_property psp,
-				union power_supply_propval *val);
+                                enum power_supply_property psp,
+                                union power_supply_propval *val);
 static int get_ac_property(struct power_supply *psy,
-		           enum power_supply_property psp,
-			   union power_supply_propval *val );
+                           enum power_supply_property psp,
+                           union power_supply_propval *val );
 
 //
 // Globals
 //
 static int critical_power_level         = 5;	     // Default setting is 5% of power left for critical
-static int ac_online			= 1;	     // Are we connected to an external power source?
-static bool module_initialized 		= false;     // Has the driver been initialized?
+static int ac_online                    = 1;	     // Are we connected to an external power source?
+static bool module_initialized          = false;     // Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
 
 //
@@ -239,7 +239,13 @@ static int check_ac_power( struct i2c_client *client )
     if( ac_online != plugged_in ){
         ac_online = plugged_in;
 	set_power_states();
-	//power_supply_changed( power_supplies[ONEUP_AC] );
+	if( ac_online ){
+	    PR_INFO( "AC Power is connected.\n" );
+	}
+	else {
+	    PR_INFO( "AC Power is disconnected.\n" );
+	}
+	power_supply_changed( power_supplies[ONEUP_AC] );
     }
 
     return plugged_in;
@@ -317,46 +323,44 @@ static int system_monitor( void *args )
     int    plugged_in;
 
     PR_INFO( "Starting system monitor...\n" );
- 
-    //
-    // Get an adapter so we can make an i2c client...
-    //
-    adapter = i2c_get_adapter( I2C_BUS );
-    if( adapter == NULL ){
-        PR_ERR( "Unable to get i2c adapter!\n" );
-	return -1;
-    }
-    PR_INFO( "Created an I2C adapter...\n" );
 
-    //
-    // Build the i2c client...
-    //
-    client = i2c_new_client_device( adapter, &board_info );
-    if( client == NULL ){
-        PR_ERR( "Unable to create i2c client!\n" );
-	return -1;
-    }
-
-    PR_INFO( "Created an I2C client device...\n" );
-
-    //
-    // Monitor until we are done...
-    //
     while( true ){
-        set_current_state( TASK_UNINTERRUPTIBLE );
-	if( kthread_should_stop() ) 
-	    break;
+        //
+        // Get an adapter so we can make an i2c client...
+        //
+        if( adapter == NULL ){
+            //
+            // get an adapter
+            //
+            set_current_state( TASK_INTERRUPTIBLE );
+	    adapter = i2c_get_adapter( I2C_BUS );
+	    PR_INFO( "Adapter = %p\n",adapter);
+        }
+        else if( client == NULL ){
+            //
+            // Get a i2c client
+            //
+	    set_current_state( TASK_INTERRUPTIBLE );
+            client = i2c_new_client_device( adapter, &board_info );
+	    PR_INFO( "Client = %p\n",client);
+        }
+        else{
+            set_current_state( TASK_UNINTERRUPTIBLE );
+            if( kthread_should_stop() ){
+                break;
+            }
 
-        plugged_in = check_ac_power( client );
-	soc        = check_battery_state( client );
+            plugged_in = check_ac_power( client );
+            soc        = check_battery_state( client );
 
-	set_current_state( TASK_INTERRUPTIBLE );
-        if( !plugged_in && (soc <= critical_power_level) ){
-	    // not pluggged in and below critical state, shutdown.
-	    PR_INFO( "Performing system shutdown unplugged and power is at %d\n",soc);
-	    shutdown_helper();
-	}
-	schedule_timeout( HZ );
+            set_current_state( TASK_INTERRUPTIBLE );
+            if( !plugged_in && (soc < critical_power_level) ){
+                // not pluggged in and below critical state, shutdown
+                PR_INFO( "Performing system shutdown unplugged and power is at %d\n",soc);
+                shutdown_helper();
+            }
+        }
+        schedule_timeout( HZ );
     }
 
     //
@@ -370,8 +374,8 @@ static int system_monitor( void *args )
 
     if( adapter )
     {
-	i2c_put_adapter( adapter );
-	adapter = NULL;
+	    i2c_put_adapter( adapter );
+	    adapter = NULL;
     }
 
     PR_INFO( "System monitor is stopping...\n" );
@@ -394,15 +398,15 @@ static int system_monitor( void *args )
 //     0        - Successfuly located the data
 //
 static int get_ac_property(struct power_supply *psy,
-		           enum power_supply_property psp,
-			   union power_supply_propval *val)
+                           enum power_supply_property psp,
+                           union power_supply_propval *val)
 {
     switch (psp) {
-	case POWER_SUPPLY_PROP_ONLINE:
-	    val->intval = ac_online;
-	    break;
-	default:
-	    return -EINVAL;
+        case POWER_SUPPLY_PROP_ONLINE:
+            val->intval = ac_online;
+            break;
+        default:
+            return -EINVAL;
 	}
 	return 0;
 }
@@ -425,57 +429,56 @@ static int get_ac_property(struct power_supply *psy,
 //     0	- Succssfully located the data
 //
 static int get_battery_int_property( struct power_supply *psy,
-		                     enum power_supply_property psp,
-				     union power_supply_propval *val )
+                                     enum power_supply_property psp,
+                                     union power_supply_propval *val )
 {
     switch( psp ) {
-	case POWER_SUPPLY_PROP_STATUS:
-		val->intval = battery.status;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_TYPE:
-		val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
-		break;
-	case POWER_SUPPLY_PROP_HEALTH:
-		val->intval = battery.health;
-		break;
-	case POWER_SUPPLY_PROP_PRESENT:
-		val->intval = battery.present;
-		break;
-	case POWER_SUPPLY_PROP_TECHNOLOGY:
-		val->intval = battery.technology;
-		break;
-	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
-		val->intval = battery.capacity_level;
-		break;
-	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = battery.capacity;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_EMPTY:
-		val->intval = 0;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_NOW:
-		val->intval = battery.capacity * TOTAL_CHARGE / 100;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-	case POWER_SUPPLY_PROP_CHARGE_FULL:
-		val->intval = TOTAL_CHARGE;
-		break;
-	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
-		val->intval = battery.timeleft;
-		break;
-	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
-		val->intval = (100 - battery.capacity) * TOTAL_CHARGE_FULL_SECONDS / 100;
-		break;
-	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = battery.temperature;
-		break;
-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = battery.voltage;
-		break;
-	default:
-		PR_INFO("%s: some properties deliberately report errors.\n",
-			__func__);
-		return -EINVAL;
+        case POWER_SUPPLY_PROP_STATUS:
+                val->intval = battery.status;
+                break;
+        case POWER_SUPPLY_PROP_CHARGE_TYPE:
+            val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
+            break;
+        case POWER_SUPPLY_PROP_HEALTH:
+            val->intval = battery.health;
+            break;
+        case POWER_SUPPLY_PROP_PRESENT:
+            val->intval = battery.present;
+            break;
+        case POWER_SUPPLY_PROP_TECHNOLOGY:
+            val->intval = battery.technology;
+            break;
+        case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
+                val->intval = battery.capacity_level;
+                break;
+        case POWER_SUPPLY_PROP_CAPACITY:
+            val->intval = battery.capacity;
+            break;
+        case POWER_SUPPLY_PROP_CHARGE_EMPTY:
+            val->intval = 0;
+            break;
+        case POWER_SUPPLY_PROP_CHARGE_NOW:
+            val->intval = battery.capacity * TOTAL_CHARGE / 100;
+            break;
+        case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+        case POWER_SUPPLY_PROP_CHARGE_FULL:
+                val->intval = TOTAL_CHARGE;
+            break;
+        case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
+            val->intval = battery.timeleft;
+            break;
+        case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
+            val->intval = (100 - battery.capacity) * TOTAL_CHARGE_FULL_SECONDS / 100;
+            break;
+        case POWER_SUPPLY_PROP_TEMP:
+                val->intval = battery.temperature;
+            break;
+        case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+            val->intval = battery.voltage;
+            break;
+        default:
+            PR_INFO("%s: some properties deliberately report errors.\n",__func__);
+            return -EINVAL;
 	}
 
 	return 0;
@@ -497,21 +500,21 @@ static int get_battery_int_property( struct power_supply *psy,
 //     0        - Successfuly located the data
 //
 static int get_battery_property(struct power_supply *psy,
-			        enum power_supply_property psp,
-				union power_supply_propval *val)
+                                enum power_supply_property psp,
+                                union power_supply_propval *val)
 {
     switch (psp) {
         case POWER_SUPPLY_PROP_MODEL_NAME:
-	    val->strval = "oneUp Battery";
-	    break;
-	case POWER_SUPPLY_PROP_MANUFACTURER:
-	    val->strval = "Argon40";
-	    break;
-	case POWER_SUPPLY_PROP_SERIAL_NUMBER:
-	    val->strval = UTS_RELEASE;
-	    break;
+            val->strval = "oneUp Battery";
+            break;
+        case POWER_SUPPLY_PROP_MANUFACTURER:
+            val->strval = "Argon40";
+            break;
+        case POWER_SUPPLY_PROP_SERIAL_NUMBER:
+            val->strval = UTS_RELEASE;
+            break;
         default:
-	    return get_battery_int_property( psy, psp, val );
+            return get_battery_int_property( psy, psp, val );
     }
 
     return 0;
@@ -537,11 +540,10 @@ static int __init oneup_power_init(void)
 
 	for (i = 0; i < ARRAY_SIZE(power_supplies); i++) {
 		power_supplies[i] = power_supply_register(NULL,
-						&power_descriptions[i],
-						&power_configs[i]);
+                                                  &power_descriptions[i],
+                                                  &power_configs[i]);
 		if (IS_ERR(power_supplies[i])) {
-			PR_ERR("%s: failed to register %s\n", __func__,
-				power_descriptions[i].name);
+            PR_ERR("%s: failed to register %s\n", __func__, power_descriptions[i].name);
 			ret = PTR_ERR(power_supplies[i]);
 			goto failed;
 		}
@@ -550,7 +552,7 @@ static int __init oneup_power_init(void)
 	monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
 	if( monitor_task == NULL ){
 	    PR_ERR( "Could not start system_monitor, terminating.\n" );
-            ret = -EINVAL;
+        ret = -EINVAL;
 	    goto failed;
 	}
 
@@ -559,13 +561,14 @@ static int __init oneup_power_init(void)
 	return 0;
 failed:
 	if( monitor_task ){
-            kthread_stop( monitor_task );
+        kthread_stop( monitor_task );
 	    monitor_task = NULL;
 	}
 
-	while (--i >= 0)
+    while (--i >= 0){
 	    power_supply_unregister(power_supplies[i]);
-   
+    }
+
 	return ret;
 }
 module_init(oneup_power_init);
@@ -594,8 +597,8 @@ static void __exit oneup_power_exit(void)
 	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
 	    power_supply_changed(power_supplies[i]);
 	
-	PR_INFO("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
-	ssleep(10);
+    //PR_INFO("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
+    //ssleep(10);
 
 	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
 	    power_supply_unregister(power_supplies[i]);
