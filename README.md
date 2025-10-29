@@ -56,6 +56,7 @@ A hacky little program to monitor nvme,fan and CPU temperature.
 - [X] Port python battery code to C.
 - [X] Incorprate working C code into driver, and do all the plumbing.
 - [X] Add code to support clean shutdown of laptop if system is not charging and hits a minimum SOC (5%).
+- [X] Add support for trixie
 - [ ] Add code to allow user to set a different SOC for shutdown or disable feature.
 - [ ] Review python code to see if there is anything else that needs to be moved over. 
 - [ ] Create an installer
