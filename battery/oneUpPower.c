@@ -25,9 +25,9 @@
 #include <generated/utsrelease.h>
 
 enum test_power_id {
-	ONEUP_BATTERY,
-	ONEUP_AC,
-	ONEUP_POWER_NUM,
+    ONEUP_BATTERY,
+    ONEUP_AC,
+    ONEUP_POWER_NUM,
 };
 
 //
@@ -36,20 +36,20 @@ enum test_power_id {
 #define DRV_NAME                    "oneUpPower"
 #define PR_INFO( fmt, arg...)       printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
 #define PR_ERR( fmt, arg... )       printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
-#define TOTAL_LIFE_SECONDS          (6 * 60 * 60)		// Time in seconds
-#define TOTAL_CHARGE                (4800 * 1000) 		// Power in micro Amp Hours, uAH
-#define TOTAL_CHARGE_FULL_SECONDS   (((2*60)+30) * 60)	// Time to full charge in seconds
-								
+#define TOTAL_LIFE_SECONDS          (6 * 60 * 60)       // Time in seconds
+#define TOTAL_CHARGE                (4800 * 1000) 	   // Power in micro Amp Hours, uAH
+#define TOTAL_CHARGE_FULL_SECONDS   (((2*60)+30) * 60)  // Time to full charge in seconds
+
 
 //
 // I2C Addresses
 //
-#define I2C_BUS			0x01
-#define BATTERY_ADDR	    0x64
-#define CURRENT_HIGH_REG	0x0E
-#define CURRENT_LOW_REG	0x0F
-#define SOC_HIGH_REG		0x04
-#define SOC_LOW_REG		0x05
+#define I2C_BUS             0x01
+#define BATTERY_ADDR        0x64
+#define CURRENT_HIGH_REG    0x0E
+#define CURRENT_LOW_REG     0x0F
+#define SOC_HIGH_REG        0x04
+#define SOC_LOW_REG         0x05
 
 //
 // Needed data structures
@@ -64,17 +64,17 @@ struct PowerStatus {
     int timeleft;       // How much time to we have left in seconds
     int temperature;    // What is the battery temperature
     int voltage;        // What is the current voltage of the battery
- 
+
 } battery = {
     .status             = POWER_SUPPLY_STATUS_DISCHARGING,
     .capacity           = 100,
     .capacity_level     = POWER_SUPPLY_CAPACITY_LEVEL_HIGH,
-	.health         = POWER_SUPPLY_HEALTH_GOOD,
-	.present        = 1,
-	.technology     = POWER_SUPPLY_TECHNOLOGY_LION,
-	.timeleft       = TOTAL_LIFE_SECONDS,
-	.temperature    = 30,
-	.voltage        = (4200 * 1000), // uV
+    .health             = POWER_SUPPLY_HEALTH_GOOD,
+    .present            = 1,
+    .technology         = POWER_SUPPLY_TECHNOLOGY_LION,
+    .timeleft           = TOTAL_LIFE_SECONDS,
+    .temperature        = 30,
+    .voltage            = (4200 * 1000), // uV
 };
 
 //
@@ -83,6 +83,7 @@ struct PowerStatus {
 static int get_battery_property(struct power_supply *psy,
                                 enum power_supply_property psp,
                                 union power_supply_propval *val);
+
 static int get_ac_property(struct power_supply *psy,
                            enum power_supply_property psp,
                            union power_supply_propval *val );
@@ -90,7 +91,7 @@ static int get_ac_property(struct power_supply *psy,
 //
 // Globals
 //
-static int critical_power_level         = 5;	     // Default setting is 5% of power left for critical
+static int soc_shutdown                 = 5;	     // Default setting is 5% of power left for critical
 static int ac_online                    = 1;	     // Are we connected to an external power source?
 static bool module_initialized          = false;     // Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
@@ -99,38 +100,38 @@ static struct task_struct *monitor_task = NULL;      // Place to store the monit
 // Properties for AC
 //
 static enum power_supply_property power_ac_props[] = {
-	POWER_SUPPLY_PROP_ONLINE,
+    POWER_SUPPLY_PROP_ONLINE,
 };
 
 //
 // Properties supported to the Battery
 //
 static enum power_supply_property power_battery_props[] = {
-	POWER_SUPPLY_PROP_STATUS,
-	POWER_SUPPLY_PROP_CHARGE_TYPE,
-	POWER_SUPPLY_PROP_HEALTH,
-	POWER_SUPPLY_PROP_PRESENT,
-	POWER_SUPPLY_PROP_TECHNOLOGY,
-	POWER_SUPPLY_PROP_CHARGE_EMPTY,
-	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
-	POWER_SUPPLY_PROP_CHARGE_FULL,
-	POWER_SUPPLY_PROP_CHARGE_NOW,
-	POWER_SUPPLY_PROP_CAPACITY,
-	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
-	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
-	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
-	POWER_SUPPLY_PROP_MODEL_NAME,
-	POWER_SUPPLY_PROP_MANUFACTURER,
-	POWER_SUPPLY_PROP_SERIAL_NUMBER,
-	POWER_SUPPLY_PROP_TEMP,
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+    POWER_SUPPLY_PROP_STATUS,
+    POWER_SUPPLY_PROP_CHARGE_TYPE,
+    POWER_SUPPLY_PROP_HEALTH,
+    POWER_SUPPLY_PROP_PRESENT,
+    POWER_SUPPLY_PROP_TECHNOLOGY,
+    POWER_SUPPLY_PROP_CHARGE_EMPTY,
+    POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+    POWER_SUPPLY_PROP_CHARGE_FULL,
+    POWER_SUPPLY_PROP_CHARGE_NOW,
+    POWER_SUPPLY_PROP_CAPACITY,
+    POWER_SUPPLY_PROP_CAPACITY_LEVEL,
+    POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
+    POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
+    POWER_SUPPLY_PROP_MODEL_NAME,
+    POWER_SUPPLY_PROP_MANUFACTURER,
+    POWER_SUPPLY_PROP_SERIAL_NUMBER,
+    POWER_SUPPLY_PROP_TEMP,
+    POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
 //
 // What Battery does the the AC object supply power to...
 //
 static char *ac_power_supplied_to[] = {
-	"BAT0",
+    "BAT0",
 };
 
 //
@@ -142,21 +143,21 @@ static struct power_supply *power_supplies[ONEUP_POWER_NUM];
 // The power descriptions for the supplies
 //
 static const struct power_supply_desc power_descriptions[] = {
-	[ONEUP_BATTERY] = {
-		.name = "BAT0",
-		.type = POWER_SUPPLY_TYPE_BATTERY,
-		.properties = power_battery_props,
-		.num_properties = ARRAY_SIZE(power_battery_props),
-		.get_property = get_battery_property,
-	},
-	[ONEUP_AC] = {
-		.name = "AC0",
-		.type = POWER_SUPPLY_TYPE_MAINS,
-		.properties = power_ac_props,
-		.num_properties = ARRAY_SIZE(power_ac_props),
-		.get_property = get_ac_property,
+    [ONEUP_BATTERY] = {
+        .name = "BAT0",
+        .type = POWER_SUPPLY_TYPE_BATTERY,
+        .properties = power_battery_props,
+        .num_properties = ARRAY_SIZE(power_battery_props),
+        .get_property = get_battery_property,
+    },
+    [ONEUP_AC] = {
+        .name = "AC0",
+        .type = POWER_SUPPLY_TYPE_MAINS,
+        .properties = power_ac_props,
+        .num_properties = ARRAY_SIZE(power_ac_props),
+        .get_property = get_ac_property,
 
-	},
+    },
 };
 
 //
@@ -164,47 +165,47 @@ static const struct power_supply_desc power_descriptions[] = {
 //
 static const struct power_supply_config power_configs[] = {
         {   /* battery */
-	},
-	{
-	    /* ac */
-	    .supplied_to = ac_power_supplied_to,
-	    .num_supplicants = ARRAY_SIZE(ac_power_supplied_to),
-	}, 
+    },
+    {
+        /* ac */
+        .supplied_to = ac_power_supplied_to,
+        .num_supplicants = ARRAY_SIZE(ac_power_supplied_to),
+    },
 };
 
 //
-// set_power_states 
+// set_power_states
 //
-// Given the current state of the capacity and status of the AC plug, 
+// Given the current state of the capacity and status of the AC plug,
 // make sure we normalize the data associated with those levels.
 //
 static void set_power_states( void )
 {
     int capacity = battery.capacity;
-    
+
     if( capacity > 95 ){
         battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
     }
     else if( capacity > 85 ){
-	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
     }
     else if( capacity > 75 ){
-	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
     }
     else if( capacity > 40 ){
-	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
     }
     else {
-	battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
     }
 
     if( ac_online ){
         if( capacity > 95 ){
-	    battery.status = POWER_SUPPLY_STATUS_FULL;
-	}
-	else {
-	    battery.status = POWER_SUPPLY_STATUS_CHARGING;
-	}
+        battery.status = POWER_SUPPLY_STATUS_FULL;
+    }
+    else {
+        battery.status = POWER_SUPPLY_STATUS_CHARGING;
+    }
     }
     else {
         battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
@@ -233,19 +234,19 @@ static int check_ac_power( struct i2c_client *client )
         plugged_in = 0;
     }
     else{
-	plugged_in = 1;
+    plugged_in = 1;
     }
-    
+
     if( ac_online != plugged_in ){
         ac_online = plugged_in;
-	set_power_states();
-	if( ac_online ){
-	    PR_INFO( "AC Power is connected.\n" );
-	}
-	else {
-	    PR_INFO( "AC Power is disconnected.\n" );
-	}
-	power_supply_changed( power_supplies[ONEUP_AC] );
+    set_power_states();
+    if( ac_online ){
+        PR_INFO( "AC Power is connected.\n" );
+    }
+    else {
+        PR_INFO( "AC Power is disconnected.\n" );
+    }
+    power_supply_changed( power_supplies[ONEUP_AC] );
     }
 
     return plugged_in;
@@ -270,13 +271,13 @@ static int check_battery_state( struct i2c_client *client )
     if( SOCPercent > 100 )
         SOCPercent = 100;
     if( SOCPercent < 0 )
-	SOCPercent = 0;
+    SOCPercent = 0;
 
     if( battery.capacity != SOCPercent ){
         battery.capacity = SOCPercent;
-	set_power_states();
-	PR_INFO( "Battery State of charge is %d%%\n",SOCPercent ); 
-	power_supply_changed( power_supplies[ONEUP_BATTERY] );
+    set_power_states();
+    PR_INFO( "Battery State of charge is %d%%\n",SOCPercent );
+    power_supply_changed( power_supplies[ONEUP_BATTERY] );
     }
 
     return SOCPercent;
@@ -285,14 +286,14 @@ static int check_battery_state( struct i2c_client *client )
 //
 // shutdown_helper
 //
-// Shutdown the system when we are critically low on power and not 
+// Shutdown the system when we are critically low on power and not
 // plugged in.
 //
 static void shutdown_helper( void ){
-    static char * shutdown_argv[] = 
+    static char * shutdown_argv[] =
                           { "/sbin/shutdown", "-h", "-P", "now", NULL };
     call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
-    
+
 }
 
 //
@@ -304,7 +305,7 @@ static void shutdown_helper( void ){
 // This code is called via a kernel thread, and executes approximatly once a second.  This timing can be modified,
 // however it should probably not be faster.
 //
-// Note:  The python code has some additional code that inspects the I2C device and profile.  This code will 
+// Note:  The python code has some additional code that inspects the I2C device and profile.  This code will
 // pobably need to be added here.  The issue is it appears to be quite timing sensitive.
 //
 // Parameters:
@@ -333,16 +334,16 @@ static int system_monitor( void *args )
             // get an adapter
             //
             set_current_state( TASK_INTERRUPTIBLE );
-	    adapter = i2c_get_adapter( I2C_BUS );
-	    PR_INFO( "Adapter = %p\n",adapter);
+        adapter = i2c_get_adapter( I2C_BUS );
+        PR_INFO( "Adapter = %p\n",adapter);
         }
         else if( client == NULL ){
             //
             // Get a i2c client
             //
-	    set_current_state( TASK_INTERRUPTIBLE );
+        set_current_state( TASK_INTERRUPTIBLE );
             client = i2c_new_client_device( adapter, &board_info );
-	    PR_INFO( "Client = %p\n",client);
+        PR_INFO( "Client = %p\n",client);
         }
         else{
             set_current_state( TASK_UNINTERRUPTIBLE );
@@ -354,7 +355,7 @@ static int system_monitor( void *args )
             soc        = check_battery_state( client );
 
             set_current_state( TASK_INTERRUPTIBLE );
-            if( !plugged_in && (soc < critical_power_level) ){
+            if( !plugged_in && (soc < soc_shutdown) ){
                 // not pluggged in and below critical state, shutdown
                 PR_INFO( "Performing system shutdown unplugged and power is at %d\n",soc);
                 shutdown_helper();
@@ -374,8 +375,8 @@ static int system_monitor( void *args )
 
     if( adapter )
     {
-	    i2c_put_adapter( adapter );
-	    adapter = NULL;
+        i2c_put_adapter( adapter );
+        adapter = NULL;
     }
 
     PR_INFO( "System monitor is stopping...\n" );
@@ -407,8 +408,8 @@ static int get_ac_property(struct power_supply *psy,
             break;
         default:
             return -EINVAL;
-	}
-	return 0;
+    }
+    return 0;
 }
 
 //
@@ -479,9 +480,9 @@ static int get_battery_int_property( struct power_supply *psy,
         default:
             PR_INFO("%s: some properties deliberately report errors.\n",__func__);
             return -EINVAL;
-	}
+    }
 
-	return 0;
+    return 0;
 }
 
 //
@@ -531,45 +532,45 @@ static int get_battery_property(struct power_supply *psy,
 //
 static int __init oneup_power_init(void)
 {
-	int i;
-	int ret;
+    int i;
+    int ret;
 
-	PR_INFO( "Starting Power monitor..." );
-	BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_supplies));
-	BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_configs));
+    PR_INFO( "Starting Power monitor..." );
+    BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_supplies));
+    BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_configs));
 
-	for (i = 0; i < ARRAY_SIZE(power_supplies); i++) {
-		power_supplies[i] = power_supply_register(NULL,
+    for (i = 0; i < ARRAY_SIZE(power_supplies); i++) {
+        power_supplies[i] = power_supply_register(NULL,
                                                   &power_descriptions[i],
                                                   &power_configs[i]);
-		if (IS_ERR(power_supplies[i])) {
+        if (IS_ERR(power_supplies[i])) {
             PR_ERR("%s: failed to register %s\n", __func__, power_descriptions[i].name);
-			ret = PTR_ERR(power_supplies[i]);
-			goto failed;
-		}
-	}
-
-	monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
-	if( monitor_task == NULL ){
-	    PR_ERR( "Could not start system_monitor, terminating.\n" );
-        ret = -EINVAL;
-	    goto failed;
-	}
-
-	set_power_states();
-	module_initialized = true;
-	return 0;
-failed:
-	if( monitor_task ){
-        kthread_stop( monitor_task );
-	    monitor_task = NULL;
-	}
-
-    while (--i >= 0){
-	    power_supply_unregister(power_supplies[i]);
+            ret = PTR_ERR(power_supplies[i]);
+            goto failed;
+        }
     }
 
-	return ret;
+    monitor_task = kthread_run( system_monitor, NULL, "argon40_monitor" );
+    if( monitor_task == NULL ){
+        PR_ERR( "Could not start system_monitor, terminating.\n" );
+        ret = -EINVAL;
+        goto failed;
+    }
+
+    set_power_states();
+    module_initialized = true;
+    return 0;
+failed:
+    if( monitor_task ){
+        kthread_stop( monitor_task );
+        monitor_task = NULL;
+    }
+
+    while (--i >= 0){
+        power_supply_unregister(power_supplies[i]);
+    }
+
+    return ret;
 }
 module_init(oneup_power_init);
 
@@ -580,32 +581,69 @@ module_init(oneup_power_init);
 //
 static void __exit oneup_power_exit(void)
 {
-	int i;
+    int i;
 
-	//
-	// First up, stop the monitor task as its using resources
-	//
-	if( monitor_task ){
-	    kthread_stop( monitor_task );
-	    monitor_task = NULL;
-	}
+    //
+    // First up, stop the monitor task as its using resources
+    //
+    if( monitor_task ){
+        kthread_stop( monitor_task );
+        monitor_task = NULL;
+    }
 
-	/* Let's see how we handle changes... */
-	ac_online = 0;
-	battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
+    /* Let's see how we handle changes... */
+    ac_online = 0;
+    battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
 
-	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
-	    power_supply_changed(power_supplies[i]);
-	
+    for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
+        power_supply_changed(power_supplies[i]);
+
     //PR_INFO("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
     //ssleep(10);
 
-	for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
-	    power_supply_unregister(power_supplies[i]);
+    for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
+        power_supply_unregister(power_supplies[i]);
 
-	module_initialized = false;
+    module_initialized = false;
 }
 module_exit(oneup_power_exit);
+
+static int param_set_soc_shutdown( const char *key, const struct kernel_param *kp )
+{
+    long soc;
+
+    if( kstrtol( key, 10, &soc  ) == 0 ){
+        if( soc == 0 ){
+            PR_INFO( "Disabling automatic shutdown when battery is below threshold.\n");
+            soc_shutdown = 0;
+	    return 0;
+        }
+        else if( (soc > 1) && (soc < 20)){
+            PR_INFO( "Changing automatic shutdown when battery is below %ld%%\n",soc);
+            soc_shutdown = soc;
+            return 0;
+        } else {
+	    PR_INFO( "Invalid value, 0 to disable, 1 -> 20 to shutdown.\n" );
+	}
+    } else {
+        PR_INFO( "Could not convert to integer\n" );
+    }
+    return -ENOENT;
+}
+
+static int param_get_soc_shutdown( char *buffer, const struct kernel_param *kp )
+{
+    return sprintf( buffer, "%d", soc_shutdown );
+}
+
+static const struct kernel_param_ops param_ops_soc_shutdown = {
+    .set = param_set_soc_shutdown,
+    .get = param_get_soc_shutdown,
+};
+
+#define param_check_soc_shutdown(name,p) __param_check(name,p,void);
+module_param( soc_shutdown, soc_shutdown, 0644 );
+MODULE_PARM_DESC(soc_shutdown, "Shutdown system when the battery state of charge is lower than this value.");
 
 MODULE_DESCRIPTION("Power supply driver for Argon40 1UP");
 MODULE_AUTHOR("Jeff Curless <jeff@thecurlesses.com>");
