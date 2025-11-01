@@ -13,24 +13,26 @@ Replace the stub return values with your real implementations later.
 
 import sys
 from typing import Tuple
-from systemsupport import systemData, CPULoad
+from systemsupport import multiDriveStat, CPUInfo, CPULoad
 
-sysdata = systemData()
+sysdata = multiDriveStat()
+cpuinfo = CPUInfo()
 
 # --------------------------
 # Metrics function stubs
 # --------------------------
 def getCPUTemp() -> float:
     """Return current CPU temperature in °C."""
-    return float( sysdata.CPUTemperature )
+    return float( cpuinfo.temperature )
 
 def getDriveTemp() -> float:
     """Return current NVMe drive temperature in °C."""
-    return sysdata.driveTemp
+    return sysdata.driveTemp( "nvme0n1" )
 
 def getIORate() -> Tuple[float, float]:
     """Return current NVMe IO rates (read_MBps, write_MBps)."""
-    return sysdata.driveStats
+    data = sysdata.readWriteBytes()
+    return data["nvme0n1"]
 
 
 # --------------------------
