@@ -1,1 +1,7 @@
+#!/bin/bash
 sudo rmmod oneUpPower
+sudo rm -vf /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+sudo sh -c "sed -i '/oneUpPower/d' /etc/modules"
+sudo rm -vf /etc/modprobe.d/oneUpPower.conf
+sudo depmod -a
+sync
