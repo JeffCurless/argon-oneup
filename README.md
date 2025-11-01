@@ -22,6 +22,15 @@ To remove it:
 
 Once the driver is loaded, go to the task bar and add a battery.  If there is already a battery plugin loaded, remove it, exit, and re-add.
 
+### oneUpPower.conf
+
+In /etc/modprobe.d/, the file oneUpPower,conf is created.  This contains the startup options for the driver:
+
+```
+options oneUpPower soc_shutdown=5
+```
+This controls the state of charge at which the system will automatically shudown.  The value is currently set to 5%, if the battery charge drops below this value, the laptop will shutdown, and you may lose work.  However, it will be a graceful shutdown, and the file system will be happy.
+
 ## Monitor
 
 Two monitoring applications:
@@ -57,10 +66,10 @@ A hacky little program to monitor nvme,fan and CPU temperature.
 - [X] Incorprate working C code into driver, and do all the plumbing.
 - [X] Add code to support clean shutdown of laptop if system is not charging and hits a minimum SOC (5%).
 - [X] Add support for trixie
-- [ ] Add code to allow user to set a different SOC for shutdown or disable feature.
+- [X] Add code to allow user to set a different SOC for shutdown or disable feature.
 - [ ] Review python code to see if there is anything else that needs to be moved over. 
-- [ ] Create an installer
-- [ ] Create an uninstaller
+- [X] Create an installer
+- [X] Create an uninstaller
 
 ## Supported Operating Systems
 
