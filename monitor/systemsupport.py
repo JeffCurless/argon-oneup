@@ -167,9 +167,13 @@ class multiDriveStat():
         except:
             return 0
         
-    def driveTemp(self,_drive) -> float:
+    def driveTemp(self,_drive:str, extracmd = None) -> float:
         smartOutRaw = ""
-        cmd = f'sudo smartctl -A /dev/{_drive}'
+        if extracmd is None:
+            cmd = f'sudo smartctl -A /dev/{_drive}'
+        else:
+            cmd = f'sudo smartctl {extracmd} -a /dev/{_drive}'
+
         try:
             command = os.popen( cmd )
             smartOutRaw = command.read()
@@ -219,7 +223,7 @@ class multiDriveStat():
    
 class CPUInfo:
     '''
-    This class deals with getting data about a Raspberry PI CPU
+    This class deals with getting data about a Raspberry PI 5 CPU fan.
     
     '''
     def __init__( self ):

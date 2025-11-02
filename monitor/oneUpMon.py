@@ -358,7 +358,8 @@ class MonitorWindow(QMainWindow):
         try:
             for _drive in self.multiDrive.drives:
                 if not _drive in self.driveTempFilter:
-                    temperatures.append( self.multiDrive.driveTemp( _drive ) )
+                    extraCmd = self.config.getValue( 'smartctl', _drive, None )
+                    temperatures.append( self.multiDrive.driveTemp( _drive, extraCmd ))
         except Exception:
             temperatures = [ 0.0 for _ in self.multiDrive.drives ]
 
