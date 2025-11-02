@@ -124,14 +124,18 @@ class multiDriveStat():
     If there is a missing drive from the filter, that drive is eliminated.
     
     '''
-    def __init__(self):
+    def __init__(self,driveIgnoreList : list[str]=[]):
         #
         # Get all drives
         #
         self._drives = []
         with os.popen( 'ls -1 /sys/block | grep -v -e loop -e ram') as command:
             lsblk_raw = command.read()
-            self._drives = [ l for l in lsblk_raw.split('\n') if l]
+            for l in lsblk_raw.split('\n'):
+                if len(l) == 0:
+                    continue
+                if not l in driveIgnoreList:
+                    self._drives.append( l )
         self._stats = [ DriveStats(_) for _ in self._drives ]
             
     @property

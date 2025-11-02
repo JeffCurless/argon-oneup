@@ -9,13 +9,11 @@ Requires: PyQt5 (including QtCharts)
 
 import sys
 from systemsupport import CPUInfo, CPULoad, multiDriveStat
+from configfile import ConfigClass
 
 # --------------------------
 # Globals
 # --------------------------
-cpuinfo = CPUInfo()
-cpuload = CPULoad()
-multiDrive = multiDriveStat()
 
 # --------------------------
 # UI
@@ -25,6 +23,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPainter
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
+from PyQt5 import QtGui
 
 class RollingChart(QWidget):
     '''
@@ -260,6 +259,16 @@ class MonitorWindow(QMainWindow):
     def __init__(self, refresh_ms: int = 1000, window = 120, parent=None):
         super().__init__(parent)
         
+        # Get all the filters loaded
+        self.config = ConfigClass("/etc/sysmon.ini")
+        self.driveTempFilter = self.config.getValueAsList( 'temperature', 'ignore' )
+        self.drivePerfFilter = self.config.getValueAsList( 'performance', 'ignore' )
+        
+        # Get supporting objects
+        self.cpuinfo = CPUInfo()
+        self.cpuload = CPULoad()
+        self.multiDrive = multiDriveStat()
+        
         self.setWindowTitle("System Monitor")
         self.setMinimumSize(900, 900)
 
@@ -273,14 +282,16 @@ class MonitorWindow(QMainWindow):
         # Charts
         self.use_chart = RollingChart(
             title="CPU Utilization",
-            series_defs=[ (name, None) for name in cpuload.cpuNames ],
+            series_defs=[ (name, None) for name in self.cpuload.cpuNames ],
             y_min=0, y_max=100,
             window=120
             )
         
         series = [("CPU", None)]
-        for name in multiDrive.drives:
-            series.append( (name,None) )
+        for name in self.multiDrive.drives:
+            if not name in self.driveTempFilter:
+                series.append( (name,None) )
+
         self.cpu_chart = RollingChart(
             title="Temperature (°C)",
             series_defs= series,
@@ -296,9 +307,10 @@ class MonitorWindow(QMainWindow):
         )
 
         series = []
-        for name in multiDrive.drives:
-            series.append( (f"{name} Read", None) )
-            series.append( (f"{name} Write", None ) )
+        for name in self.multiDrive.drives:
+            if not name in self.drivePerfFilter:
+                series.append( (f"{name} Read", None) )
+                series.append( (f"{name} Write", None ) )
             
         self.io_chart = RollingChartDynamic(
             title="Disk I/O",
@@ -331,39 +343,42 @@ class MonitorWindow(QMainWindow):
             
         # Obtain the current fan speed
         try:
-            fan_speed = cpuinfo.CPUFanSpeed
+            fan_speed = self.cpuinfo.CPUFanSpeed
         except Exception:
             fan_speed = None
 
+        # Setup the temperature for the CPU and Drives
         temperatures = []
         try:
-            temperatures.append( float(cpuinfo.temperature) )
+            temperatures.append( float(self.cpuinfo.temperature) )
         except Exception:
             temperatures.append( 0.0 )
             
-        # Obtain the NVMe device temperature
+        # Obtain the drive temperatures
         try:
-            for _drive in multiDrive.drives:
-                temperatures.append( multiDrive.driveTemp( _drive ) )
+            for _drive in self.multiDrive.drives:
+                if not _drive in self.driveTempFilter:
+                    temperatures.append( self.multiDrive.driveTemp( _drive ) )
         except Exception:
-            temperatures = [ 0.0 for _ in multiDrive.drives ]
+            temperatures = [ 0.0 for _ in self.multiDrive.drives ]
 
         # Obtain the NVMe Device read and write rates
         try:
             rwData = []
-            drives = multiDrive.readWriteBytes()
+            drives = self.multiDrive.readWriteBytes()
             for drive in drives:
-                rwData.append( float(drives[drive][0]))
-                rwData.append( float(drives[drive][1]))
+                if not drive in self.drivePerfFilter:
+                    rwData.append( float(drives[drive][0]))
+                    rwData.append( float(drives[drive][1]))
         except Exception :
             rwData = [ None, None ]
             
         # Get the CPU load precentages
         try:
-            p = cpuload.getPercentages()
-            values = [p[name] for name in cpuload.cpuNames]
+            p = self.cpuload.getPercentages()
+            values = [p[name] for name in self.cpuload.cpuNames]
         except Exception:
-            values = [ None for name in cpuload.cpuNames ]
+            values = [ None for name in self.cpuload.cpuNames ]
 
         # Append to charts
         self.cpu_chart.append( temperatures )
