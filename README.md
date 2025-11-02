@@ -38,8 +38,27 @@ Two monitoring applications:
 ### oneUpMon
 Monitor the use of system resources, graphically
 
-- [ ] Modify code to support multiple Drives for read/write rate and temperature
-- [ ] Add support for not moitoring some drives.  For instance, monitor a raid device for performance, but not temperature
+- [X] Modify code to support multiple Drives for read/write rate and temperature
+- [X] Add support for not moitoring some drives.  For instance, monitor a raid device for performance, but not temperature
+- [X] Add support for additional arguements to the smartctl command
+
+This monitor will automatically pull in all drives for performance and temperature monitoring.  In order to ignore some drives, you need to create the file "/etc/sysmon.inilk,
+as an example:
+
+```
+[performance]
+ignore=mmcblk0
+
+[temperature]
+ignore=mmcblk0
+
+#
+# Modify the smartctl command being used, on a per drive basis.  This is for other systems
+#
+[smartctl]
+sda=-d sat
+
+```
       
 ### simple_monitor
 A simple monitor that dislays some system utilization
