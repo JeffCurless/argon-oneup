@@ -298,10 +298,16 @@ class MonitorWindow(QMainWindow):
             y_min=20, y_max=80,
             window=window
             )
+        
+        casefan = self.config.getValue( "cooling", "casefan", None )
+        if casefan is None:
+            series = [("RPM",None)]
+        else:
+            series = [("CPU", None),("CaseFan",None)]
 
         self.fan_chart = RollingChart(
             title="Fan Speed",
-            series_defs=[("RPM",None)],
+            series_defs=series,
             y_min=0,y_max=6000,
             window=window
         )
@@ -342,9 +348,12 @@ class MonitorWindow(QMainWindow):
         '''
             
         # Obtain the current fan speed
-        try:
-            fan_speed = self.cpuinfo.CPUFanSpeed
-        except Exception:
+        if self.cpuinfo.model == 5:
+            try:
+                fan_speed = self.cpuinfo.CPUFanSpeed
+            except Exception:
+                fan_speed = None
+        else:
             fan_speed = None
 
         # Setup the temperature for the CPU and Drives
@@ -353,7 +362,7 @@ class MonitorWindow(QMainWindow):
             temperatures.append( float(self.cpuinfo.temperature) )
         except Exception:
             temperatures.append( 0.0 )
-            
+             
         # Obtain the drive temperatures
         try:
             for _drive in self.multiDrive.drives:

@@ -229,6 +229,22 @@ class CPUInfo:
     def __init__( self ):
         self._cputemp = CPUTemperature()
         
+    def _cpuModel( self ) -> int:
+        with os.popen( "grep Model /proc/cpuinfo" ) as command:
+            data = command.read()
+            if "Compute Module 5" in data:
+                return 5
+            elif "Raspberry Pi 4" in data:
+                return 4
+            elif "Raspberry Pi 5" in data:
+                return 5
+            else:
+                return 0
+            
+    @property
+    def model( self ) -> int:
+        return self._cpuModel()
+    
     @property
     def temperature( self ) -> float:
         '''
@@ -249,15 +265,17 @@ class CPUInfo:
         Return:
             The fanspeed as a floating point number
         '''
-        speed= 0
-        try:
-            command = os.popen( 'cat /sys/devices/platform/cooling_fan/hwmon/*/fan1_input' )
-            speed = int( command.read().strip())
-        except Exception as error:
-            print( f"Could not determine fan speed, error {error}" )
-        finally:
-            command.close()
-
+        speed = 0
+        if self._cpuModel() == 5:
+            try:
+                command = os.popen( 'cat /sys/devices/platform/cooling_fan/hwmon/*/fan1_input' )
+                speed = int( command.read().strip())
+            except Exception as error:
+                print( f"Could not determine fan speed, error {error}" )
+            finally:
+                command.close()
+        else:
+            speed = 0
         return float(speed)
 
 class CPULoad:
@@ -378,7 +396,8 @@ if __name__ == "__main__":
     
     cpuinfo = CPUInfo()
     print( f"CPU Temperature = {cpuinfo.temperature}" )
-    print( f"CPU Fan Speed  = {cpuinfo.CPUFanSpeed}" )
+    print( f"CPU Fan Speed   = {cpuinfo.CPUFanSpeed}" )
+    print( f"CPU Model       = {cpuinfo.model}" )
     
     test = multiDriveStat()
     print( test.drives )
