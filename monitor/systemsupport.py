@@ -84,6 +84,7 @@ class DriveStats:
     def name(self) -> str:
         return self._device
     
+    @property
     def readAllStats( self ) -> list[int]:
         '''
         read all of the drive statisics from sysfs for the device.
@@ -93,19 +94,24 @@ class DriveStats:
         '''
         return self._getStats()
         
+    @property
     def readSectors( self )-> int:
         return self._getStats()[DriveStats.READ_SECTORS]
     
+    @property
     def writeSectors( self ) -> int:
         return self._getStats()[DriveStats.WRITE_SECTORS]
         
+    @property
     def discardSectors( self ) -> int:
         return self._getStats()[DriveStats.DISCARD_SECTORS]
         
+    @property
     def readWriteSectors( self ) -> tuple[int,int]:
         curData = self._getStats()
         return (curData[DriveStats.READ_SECTORS],curData[DriveStats.WRITE_SECTORS])
     
+    @property
     def readWriteBytes( self ) -> tuple[int,int]:
         curData = self._getStats()
         return (curData[DriveStats.READ_SECTORS]*512,curData[DriveStats.WRITE_SECTORS]*512)
@@ -168,6 +174,19 @@ class multiDriveStat():
             return 0
         
     def driveTemp(self,_drive:str, extracmd = None) -> float:
+        '''
+        Get the drive temperature using smart data.  There are three basic temperature
+        settings we can read, smart ID 194, 190 and the Temperature: value.  These are
+        depenent on the drive, so look for all of them, and depending on the result, we
+        get the value.
+        
+        Parameters:
+            _drive   : The device we wish to scan
+            extraCmd : An optional additional command to send to the device.
+            
+        Returns:
+            The temperature as a float, or zero if there is an error.
+        '''
         smartOutRaw = ""
         if extracmd is None:
             cmd = f'sudo smartctl -A /dev/{_drive}'
@@ -208,7 +227,7 @@ class multiDriveStat():
         '''
         curData = {}
         for _ in self._stats:
-            curData[_.name] = _.readWriteSectors()
+            curData[_.name] = _.readWriteSectors
         return curData
     
     def readWriteBytes( self ) -> dict[str,tuple[int,int]]:
@@ -218,7 +237,7 @@ class multiDriveStat():
         '''
         curData = {}
         for _ in self._stats:
-            curData[_.name] = _.readWriteBytes()
+            curData[_.name] = _.readWriteBytes
         return curData
    
 class CPUInfo:
@@ -230,14 +249,26 @@ class CPUInfo:
         self._cputemp = CPUTemperature()
         
     def _cpuModel( self ) -> int:
+        '''
+        Check for the cpu model.  Scan cpuinfo to see if we can locate a string that
+        matches something we are looking for.
+        
+        Return:
+            Model of the Raspberry PI.  This treats the Comput Modules the same as
+            standard model B's
+        '''
         with os.popen( "grep Model /proc/cpuinfo" ) as command:
             data = command.read()
             if "Compute Module 5" in data:
                 return 5
-            elif "Raspberry Pi 4" in data:
-                return 4
             elif "Raspberry Pi 5" in data:
                 return 5
+            elif "Raspberry Pi 4" in data:
+                return 4
+            elif "Compute Module 4" in data:
+                return 4
+            elif "Raspberry Pi 3" in data:
+                return 3
             else:
                 return 0
             
@@ -382,6 +413,20 @@ class CPULoad:
         '''
         return len(self._previousData)
 
+class CaseFan:
+    '''
+    Class used to monitor a TACH from a case fan.  
+    '''
+    def __init__( self, pin=None ):
+        self.tach = pin
+        self.rpm  = 0
+        
+    def setTACHPin( self, pin = int):
+        self.tach = pin
+        
+    @property
+    def speed( self ) -> float:
+        return self.rpm
     
 if __name__ == "__main__":
     
@@ -398,6 +443,11 @@ if __name__ == "__main__":
     print( f"CPU Temperature = {cpuinfo.temperature}" )
     print( f"CPU Fan Speed   = {cpuinfo.CPUFanSpeed}" )
     print( f"CPU Model       = {cpuinfo.model}" )
+    
+    caseFan = CaseFan( 18 )
+    print( f"RPM = {caseFan.speed}" )
+    time.sleep(1)
+    print( f"RPM = {caseFan.speed}" )
     
     test = multiDriveStat()
     print( test.drives )

@@ -8,12 +8,15 @@ Requires: PyQt5 (including QtCharts)
 """
 
 import sys
-from systemsupport import CPUInfo, CPULoad, multiDriveStat
+from systemsupport import CPUInfo, CPULoad, multiDriveStat, CaseFan
 from configfile import ConfigClass
 
 # --------------------------
 # Globals
 # --------------------------
+
+MIN_WIDTH   = 1000
+MIN_HEIGHT  = 800
 
 # --------------------------
 # UI
@@ -265,12 +268,14 @@ class MonitorWindow(QMainWindow):
         self.drivePerfFilter = self.config.getValueAsList( 'performance', 'ignore' )
         
         # Get supporting objects
-        self.cpuinfo = CPUInfo()
-        self.cpuload = CPULoad()
+        self.cpuinfo    = CPUInfo()
+        self.cpuload    = CPULoad()
+        self.casefan    = CaseFan()
+        self.caseFanPin = None
         self.multiDrive = multiDriveStat()
         
         self.setWindowTitle("System Monitor")
-        self.setMinimumSize(900, 900)
+        self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
 
         central = QWidget(self)
         grid = QGridLayout(central)
@@ -299,18 +304,22 @@ class MonitorWindow(QMainWindow):
             window=window
             )
         
-        casefan = self.config.getValue( "cooling", "casefan", None )
-        if casefan is None:
-            series = [("RPM",None)]
-        else:
-            series = [("CPU", None),("CaseFan",None)]
+        if self.cpuinfo.model == 5:
+            self.caseFanPin = self.config.getValue( "cooling", "casefan", None )
+            if self.caseFanPin is None:
+                series = [("CPU",None)]
+            else:
+                self.casefan.setTACHPin( self.caseFanPin)
+                series = [("CPU",None),("CaseFan",None)]
 
-        self.fan_chart = RollingChart(
-            title="Fan Speed",
-            series_defs=series,
-            y_min=0,y_max=6000,
-            window=window
-        )
+            self.fan_chart = RollingChart(
+                title="Fan Speed",
+                series_defs=series,
+                y_min=0,y_max=6000,
+                window=window
+            )
+        else:
+            self.fan_chart = None
 
         series = []
         for name in self.multiDrive.drives:
@@ -328,8 +337,11 @@ class MonitorWindow(QMainWindow):
         # Layout: 2x2 grid (CPU, NVMe on top; IO full width bottom)
         grid.addWidget(self.use_chart, 0, 0, 1, 2 )
         grid.addWidget(self.io_chart,  1, 0, 1, 2 )
-        grid.addWidget(self.cpu_chart, 2, 0, 1, 1 )
-        grid.addWidget(self.fan_chart, 2, 1, 1, 1 )
+        if self.fan_chart:
+            grid.addWidget(self.cpu_chart, 2, 0, 1, 1 )
+            grid.addWidget(self.fan_chart, 2, 1, 1, 1 )
+        else:
+            grid.addWidget(self.cpu_chart, 2, 0, 1, 2 )
 
         # Get the initial information from the syste
         self.refresh_metrics()
@@ -350,11 +362,14 @@ class MonitorWindow(QMainWindow):
         # Obtain the current fan speed
         if self.cpuinfo.model == 5:
             try:
-                fan_speed = self.cpuinfo.CPUFanSpeed
+                if self.caseFanPin:
+                    fan_speed = [self.cpuinfo.CPUFanSpeed,self.casefan.speed]
+                else:
+                    fan_speed = [self.cpuinfo.CPUFanSpeed]
             except Exception:
-                fan_speed = None
+                fan_speed = [None,None]
         else:
-            fan_speed = None
+            fan_speed = [None,None]
 
         # Setup the temperature for the CPU and Drives
         temperatures = []
@@ -392,7 +407,8 @@ class MonitorWindow(QMainWindow):
 
         # Append to charts
         self.cpu_chart.append( temperatures )
-        self.fan_chart.append([fan_speed])
+        if self.fan_chart:
+            self.fan_chart.append( fan_speed )
         self.io_chart.append( rwData )
         self.use_chart.append( values )
 
@@ -404,4 +420,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
