@@ -3,13 +3,14 @@
 
 """
 Application that monitors current CPU and Drive temp, along with fan speed and IO utilization
-Requires: PyQt5 (including QtCharts)
+Requires: PyQt6 (including QtCharts)
 
 """
 
 import sys
-from systemsupport import CPUInfo, CPULoad, multiDriveStat, CaseFan
+from systemsupport import CPUInfo, CPULoad, multiDriveStat, NetworkLoad
 from configfile import ConfigClass
+from fanspeed import GetCaseFanSpeed
 
 # --------------------------
 # Globals
@@ -22,11 +23,11 @@ MIN_HEIGHT  = 800
 # UI
 # --------------------------
 
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPainter
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout
-from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
-from PyQt5 import QtGui
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QPainter
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout
+from PyQt6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
+from PyQt6 import QtGui
 
 class RollingChart(QWidget):
     '''
@@ -47,7 +48,7 @@ class RollingChart(QWidget):
         
         self.chart.setTitle(title)
         self.chart.legend().setVisible(len(series_defs) > 1)
-        self.chart.legend().setAlignment(Qt.AlignBottom)
+        self.chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
 
         self.series:list[QLineSeries] = []
         for name, color in series_defs:
@@ -73,8 +74,8 @@ class RollingChart(QWidget):
         self.axis_y.setRange(y_min, y_max)
         self.axis_y.setLabelFormat( "%d" )
 
-        self.chart.addAxis(self.axis_x, Qt.AlignBottom)
-        self.chart.addAxis(self.axis_y, Qt.AlignLeft)
+        self.chart.addAxis(self.axis_x, Qt.AlignmentFlag.AlignBottom)
+        self.chart.addAxis(self.axis_y, Qt.AlignmentFlag.AlignLeft)
 
         for s in self.series:
             s.attachAxis(self.axis_x)
@@ -116,7 +117,7 @@ class RollingChart(QWidget):
         for s in self.series:
             # Efficient trim: remove points with x < min_x_to_keep
             # QLineSeries doesn't provide O(1) pop from front, so we rebuild if large
-            points = s.pointsVector()
+            points = s.points()
             if points and points[0].x() < min_x_to_keep:
                 # binary search for first index >= min_x_to_keep
                 lo, hi = 0, len(points)
@@ -225,7 +226,7 @@ class RollingChartDynamic(RollingChart):
         maxV = 0
         for s in self.series:
             drop = 0
-            points = s.pointsVector()
+            points = s.points()
             for index, point in enumerate(points):
                 if point.x() < min_x_to_keep:
                     drop = index
@@ -243,7 +244,7 @@ class RollingChartDynamic(RollingChart):
             self.scale.prevScale()
             self.chart.setTitle( self.title + f" ({self.scale.name})")
             for s in self.series:
-                points = s.pointsVector()
+                points = s.points()
                 for point in points:
                     point.setY( self.scale.scaleUp(point.y()))
                 s.replace(points)
@@ -264,14 +265,17 @@ class MonitorWindow(QMainWindow):
         
         # Get all the filters loaded
         self.config = ConfigClass("/etc/sysmon.ini")
-        self.driveTempFilter = self.config.getValueAsList( 'temperature', 'ignore' )
-        self.drivePerfFilter = self.config.getValueAsList( 'performance', 'ignore' )
+        self.driveTempFilter = self.config.getValueAsList( 'drive', 'temp_ignore' )
+        self.drivePerfFilter = self.config.getValueAsList( 'drive', 'perf_ignore' )
         
         # Get supporting objects
         self.cpuinfo    = CPUInfo()
         self.cpuload    = CPULoad()
-        self.casefan    = CaseFan()
-        self.caseFanPin = None
+        self.caseFanPin = self.config.getValue( 'cooling', 'casefan',None )
+        if self.caseFanPin is None :
+            self.caseFan = None
+        else:
+            self.caseFan = GetCaseFanSpeed( int(self.caseFanPin) )
         self.multiDrive = multiDriveStat()
         
         self.setWindowTitle("System Monitor")
@@ -309,7 +313,6 @@ class MonitorWindow(QMainWindow):
             if self.caseFanPin is None:
                 series = [("CPU",None)]
             else:
-                self.casefan.setTACHPin( self.caseFanPin)
                 series = [("CPU",None),("CaseFan",None)]
 
             self.fan_chart = RollingChart(
@@ -330,18 +333,33 @@ class MonitorWindow(QMainWindow):
         self.io_chart = RollingChartDynamic(
             title="Disk I/O",
             series_defs=series,
-            range_y=[("Bytes/s", 1),("KiB/s",1024),("MiB/s", 1024*1024),("GiB/s",1024*1024*1024)],
+            range_y=[("Bytes/s", 1),("KiB/s", 1024),("MiB/s", 1024*1024),("GiB/s", 1024*1024*1024)],
+            window=window,
+        )
+        
+        self.networkFilter   = self.config.getValueAsList( 'network', 'device_ignore')
+        self.network = NetworkLoad(self.networkFilter)
+        series = []
+        for name in self.network.names:
+            series.append( (f"{name} Read", None) )
+            series.append( (f"{name} Write", None) )
+        
+        self.network_chart = RollingChartDynamic(
+            title="Network I/O",
+            series_defs=series,
+            range_y=[("Bytes/s", 1),("KiB/s", 1024),("MiB/s", 1024*1024),("GiB/s", 1024*1024*1024)],
             window=window,
         )
 
         # Layout: 2x2 grid (CPU, NVMe on top; IO full width bottom)
         grid.addWidget(self.use_chart, 0, 0, 1, 2 )
         grid.addWidget(self.io_chart,  1, 0, 1, 2 )
+        grid.addWidget(self.network_chart, 2, 0, 1, 2 )
         if self.fan_chart:
-            grid.addWidget(self.cpu_chart, 2, 0, 1, 1 )
-            grid.addWidget(self.fan_chart, 2, 1, 1, 1 )
+            grid.addWidget(self.cpu_chart, 3, 0, 1, 1 )
+            grid.addWidget(self.fan_chart, 3, 1, 1, 1 )
         else:
-            grid.addWidget(self.cpu_chart, 2, 0, 1, 2 )
+            grid.addWidget(self.cpu_chart, 3, 0, 1, 2 )
 
         # Get the initial information from the syste
         self.refresh_metrics()
@@ -363,14 +381,15 @@ class MonitorWindow(QMainWindow):
         if self.cpuinfo.model == 5:
             try:
                 if self.caseFanPin:
-                    fan_speed = [self.cpuinfo.CPUFanSpeed,self.casefan.speed]
+                    fan_speed = [self.cpuinfo.CPUFanSpeed,self.caseFan.RPM]
                 else:
                     fan_speed = [self.cpuinfo.CPUFanSpeed]
-            except Exception:
+            except Exception as e:
+                print( f"error getting fan speed: {e}" )
                 fan_speed = [None,None]
         else:
             fan_speed = [None,None]
-
+        
         # Setup the temperature for the CPU and Drives
         temperatures = []
         try:
@@ -398,6 +417,16 @@ class MonitorWindow(QMainWindow):
         except Exception :
             rwData = [ None, None ]
             
+        # obtain network device read and writes rates
+        try:
+            netData = []
+            networks = self.network.stats
+            for network in networks:
+                netData.append( float( networks[network][0]))
+                netData.append( float( networks[network][1]))
+        except Exception:
+            netData = [None,None]
+            
         # Get the CPU load precentages
         try:
             p = self.cpuload.getPercentages()
@@ -410,13 +439,14 @@ class MonitorWindow(QMainWindow):
         if self.fan_chart:
             self.fan_chart.append( fan_speed )
         self.io_chart.append( rwData )
+        self.network_chart.append( netData )
         self.use_chart.append( values )
 
 def main():
     app = QApplication(sys.argv)
     w = MonitorWindow(refresh_ms=1000)
     w.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

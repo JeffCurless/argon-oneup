@@ -412,22 +412,49 @@ class CPULoad:
             Number of CPU's
         '''
         return len(self._previousData)
-
-class CaseFan:
-    '''
-    Class used to monitor a TACH from a case fan.  
-    '''
-    def __init__( self, pin=None ):
-        self.tach = pin
-        self.rpm  = 0
+    
+class NetworkLoad:
+    def __init__(self, networkIgnoreList : list[str]=[]):
+        self._networks = []
+        with os.popen( 'ls -1 /sys/class/net') as command:
+            net_raw = command.read()
+            for l in net_raw.split('\n'):
+                if len(l) == 0:
+                    continue
+                if not l in networkIgnoreList:
+                    self._networks.append( l )
+        self.prevStats = {}
+        for net in self._networks:
+            self.prevStats[net] = self._getData(net)
+    @property
+    def names( self ):
+        return self._networks
+    
+    def _getData( self, name : str ) -> tuple[int,int]:
+        readData = 0
+        writeData = 0
+        try:
+            with open( f"/sys/class/net/{name}/statistics/rx_bytes" ) as f:
+                readData = f.read().strip()
+            with open( f"/sys/class/net/{name}/statistics/tx_bytes" ) as f:
+                writeData = f.read().strip()
+        except Exception as e:
+            print( f"Error {e}" )
         
-    def setTACHPin( self, pin = int):
-        self.tach = pin
+        #print( f"{readData} {writeData}" )
+        return (int(readData), int(writeData))
         
     @property
-    def speed( self ) -> float:
-        return self.rpm
-    
+    def stats(self) -> dict[tuple[int,int]]:
+        data = {}
+        curstats = {}
+        for net in self._networks:
+            curstats[net] = self._getData( net )
+            data[net] = ((curstats[net][0] - self.prevStats[net][0]),
+                         (curstats[net][1] - self.prevStats[net][1]))
+        self.prevStats = curstats
+        return data
+            
 if __name__ == "__main__":
     
     load = CPULoad()
@@ -443,15 +470,15 @@ if __name__ == "__main__":
     print( f"CPU Temperature = {cpuinfo.temperature}" )
     print( f"CPU Fan Speed   = {cpuinfo.CPUFanSpeed}" )
     print( f"CPU Model       = {cpuinfo.model}" )
-    
-    caseFan = CaseFan( 18 )
-    print( f"RPM = {caseFan.speed}" )
-    time.sleep(1)
-    print( f"RPM = {caseFan.speed}" )
-    
+       
     test = multiDriveStat()
     print( test.drives )
     for drive in test.drives:
         print( f"Drive {drive} size is {test.driveSize( drive )}" )
     print( test.readWriteSectors() )
     
+    network = NetworkLoad( ['lo','eth0'])
+    print( f"Networks Available: {network.names}" )
+    while True:
+        print( f"Stats = {network.stats}" )
+        time.sleep(1)
