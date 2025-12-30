@@ -22,10 +22,10 @@ class ConfigClass:
         occasionally.
         
         '''
-        if not self.readFile:
+        try:
             _result = self.config.read( self.filename )
-            if len(_result) > 0:
-                self.readFile = True
+        except Exception as error:
+            print( f"{error}" )
         
     def getValue( self, section : str, key : str, default="" ) -> str:
         '''
@@ -41,7 +41,6 @@ class ConfigClass:
             The value of the key from the section read.
         '''
         value = default
-        self._openConfig()
         try:
             value = self.config[section][key].replace('"','').strip()
         except:
@@ -62,7 +61,6 @@ class ConfigClass:
             a List of items
         '''
         value = default
-        self._openConfig()
         try:
             temp = self.config[section][name]
             value = [ n.replace('"','').strip() for n in temp.split(",")]
@@ -76,6 +74,9 @@ if __name__ == "__main__":
     print( f"Value = {cfg.getValueAsList( 'temperature', 'ignore' )}" )
     print( f"Value = {cfg.getValue( 'performance', 'ignore' )}" )
     print( f"Value = {cfg.getValueAsList( 'performance', 'ignore' )}" )
+
+    drive = cfg.getValue( 'smartctl', 'sda' )
+    print( f"drive = {drive}" )
     
     cfg = ConfigClass( "missingfile.ini" )
     
