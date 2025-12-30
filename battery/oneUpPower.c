@@ -187,25 +187,25 @@ static void set_power_states( void )
         battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
     }
     else if( capacity > 85 ){
-    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+        battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
     }
     else if( capacity > 75 ){
-    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+        battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
     }
     else if( capacity > 40 ){
-    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+        battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
     }
     else {
-    battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+        battery.capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
     }
 
     if( ac_online ){
         if( capacity > 95 ){
         battery.status = POWER_SUPPLY_STATUS_FULL;
-    }
-    else {
-        battery.status = POWER_SUPPLY_STATUS_CHARGING;
-    }
+        }
+        else {
+            battery.status = POWER_SUPPLY_STATUS_CHARGING;
+        }
     }
     else {
         battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
@@ -234,19 +234,19 @@ static int check_ac_power( struct i2c_client *client )
         plugged_in = 0;
     }
     else{
-    plugged_in = 1;
+        plugged_in = 1;
     }
 
     if( ac_online != plugged_in ){
         ac_online = plugged_in;
-    set_power_states();
-    if( ac_online ){
-        PR_INFO( "AC Power is connected.\n" );
-    }
-    else {
-        PR_INFO( "AC Power is disconnected.\n" );
-    }
-    power_supply_changed( power_supplies[ONEUP_AC] );
+        set_power_states();
+        if( ac_online ){
+            PR_INFO( "AC Power is connected.\n" );
+        }
+        else {
+            PR_INFO( "AC Power is disconnected.\n" );
+        }
+        power_supply_changed( power_supplies[ONEUP_AC] );
     }
 
     return plugged_in;
@@ -268,16 +268,18 @@ static int check_battery_state( struct i2c_client *client )
     int SOCPercent;
 
     SOCPercent = i2c_smbus_read_byte_data( client, SOC_HIGH_REG );
-    if( SOCPercent > 100 )
+    if( SOCPercent > 100 ){
         SOCPercent = 100;
-    if( SOCPercent < 0 )
-    SOCPercent = 0;
+    }
+    if( SOCPercent < 0 ){
+        SOCPercent = 0;
+    }
 
     if( battery.capacity != SOCPercent ){
         battery.capacity = SOCPercent;
-    set_power_states();
-    PR_INFO( "Battery State of charge is %d%%\n",SOCPercent );
-    power_supply_changed( power_supplies[ONEUP_BATTERY] );
+        set_power_states();
+        PR_INFO( "Battery State of charge is %d%%\n",SOCPercent );
+        power_supply_changed( power_supplies[ONEUP_BATTERY] );
     }
 
     return SOCPercent;
@@ -290,10 +292,9 @@ static int check_battery_state( struct i2c_client *client )
 // plugged in.
 //
 static void shutdown_helper( void ){
-    static char * shutdown_argv[] =
-                          { "/sbin/shutdown", "-h", "-P", "now", NULL };
+    static char * shutdown_argv[] ={ "/sbin/shutdown", "-h", "-P", "now", NULL };
+    
     call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
-
 }
 
 //
@@ -334,16 +335,16 @@ static int system_monitor( void *args )
             // get an adapter
             //
             set_current_state( TASK_INTERRUPTIBLE );
-        adapter = i2c_get_adapter( I2C_BUS );
-        PR_INFO( "Adapter = %p\n",adapter);
+            adapter = i2c_get_adapter( I2C_BUS );
+            PR_INFO( "Adapter = %p\n",adapter);
         }
         else if( client == NULL ){
             //
             // Get a i2c client
             //
-        set_current_state( TASK_INTERRUPTIBLE );
+            set_current_state( TASK_INTERRUPTIBLE );
             client = i2c_new_client_device( adapter, &board_info );
-        PR_INFO( "Client = %p\n",client);
+            PR_INFO( "Client = %p\n",client);
         }
         else{
             set_current_state( TASK_UNINTERRUPTIBLE );
@@ -435,8 +436,8 @@ static int get_battery_int_property( struct power_supply *psy,
 {
     switch( psp ) {
         case POWER_SUPPLY_PROP_STATUS:
-                val->intval = battery.status;
-                break;
+            val->intval = battery.status;
+            break;
         case POWER_SUPPLY_PROP_CHARGE_TYPE:
             val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
             break;
@@ -450,8 +451,8 @@ static int get_battery_int_property( struct power_supply *psy,
             val->intval = battery.technology;
             break;
         case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
-                val->intval = battery.capacity_level;
-                break;
+            val->intval = battery.capacity_level;
+            break;
         case POWER_SUPPLY_PROP_CAPACITY:
             val->intval = battery.capacity;
             break;
@@ -463,7 +464,7 @@ static int get_battery_int_property( struct power_supply *psy,
             break;
         case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
         case POWER_SUPPLY_PROP_CHARGE_FULL:
-                val->intval = TOTAL_CHARGE;
+            val->intval = TOTAL_CHARGE;
             break;
         case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
             val->intval = battery.timeleft;
@@ -472,7 +473,7 @@ static int get_battery_int_property( struct power_supply *psy,
             val->intval = (100 - battery.capacity) * TOTAL_CHARGE_FULL_SECONDS / 100;
             break;
         case POWER_SUPPLY_PROP_TEMP:
-                val->intval = battery.temperature;
+            val->intval = battery.temperature;
             break;
         case POWER_SUPPLY_PROP_VOLTAGE_NOW:
             val->intval = battery.voltage;
@@ -595,14 +596,16 @@ static void __exit oneup_power_exit(void)
     ac_online = 0;
     battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
 
-    for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
+    for (i = 0; i < ARRAY_SIZE(power_supplies); i++){
         power_supply_changed(power_supplies[i]);
+    }
 
     //PR_INFO("%s: 'changed' event sent, sleeping for 10 seconds...\n", __func__);
     //ssleep(10);
 
-    for (i = 0; i < ARRAY_SIZE(power_supplies); i++)
+    for (i = 0; i < ARRAY_SIZE(power_supplies); i++){
         power_supply_unregister(power_supplies[i]);
+    }
 
     module_initialized = false;
 }
@@ -616,15 +619,15 @@ static int param_set_soc_shutdown( const char *key, const struct kernel_param *k
         if( soc == 0 ){
             PR_INFO( "Disabling automatic shutdown when battery is below threshold.\n");
             soc_shutdown = 0;
-	    return 0;
+            return 0;
         }
         else if( (soc > 1) && (soc < 20)){
             PR_INFO( "Changing automatic shutdown when battery is below %ld%%\n",soc);
             soc_shutdown = soc;
             return 0;
         } else {
-	    PR_INFO( "Invalid value, 0 to disable, 1 -> 20 to shutdown.\n" );
-	}
+            PR_INFO( "Invalid value, 0 to disable, 1 -> 20 to shutdown.\n" );
+        }
     } else {
         PR_INFO( "Could not convert to integer\n" );
     }
