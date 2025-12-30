@@ -9,6 +9,7 @@ Requires: PyQt6 (including QtCharts)
 
 import sys
 from systemsupport import CPUInfo, CPULoad, multiDriveStat, NetworkLoad
+import gc
 from configfile import ConfigClass
 from fanspeed import GetCaseFanSpeed
 
@@ -18,6 +19,8 @@ from fanspeed import GetCaseFanSpeed
 
 MIN_WIDTH   = 1000
 MIN_HEIGHT  = 800
+
+DATA_WINDOW = 60
 
 # --------------------------
 # UI
@@ -39,9 +42,9 @@ class RollingChart(QWidget):
         y_min,y_max - Fixed Y axis range.
         window      - Number of points to keep (points are 1 per tick by default).
     '''
-    def __init__(self, title: str, series_defs: list[tuple], y_min: float, y_max: float, window: int = 120, parent=None):
+    def __init__(self, title: str, series_defs: list[tuple], y_min: float, y_max: float, window: int = DATA_WINDOW, parent=None):
         super().__init__(parent)
-        
+        self.title = title
         self.pointWindow = window
         self.xpos   = window - 1
         self.chart  = QChart()
@@ -173,7 +176,7 @@ class scaleValues:
     
     
 class RollingChartDynamic(RollingChart):
-    def __init__(self, title : str, series_defs: list[tuple], range_y : list[tuple], window=120,parent=None):
+    def __init__(self, title : str, series_defs: list[tuple], range_y : list[tuple], window=DATA_WINDOW,parent=None):
         self.maxY = 512
         super().__init__(title,series_defs,0,self.maxY,window,parent)
         self.title = title
@@ -187,6 +190,7 @@ class RollingChartDynamic(RollingChart):
             if value < i:
                 return i
         return 4
+    
     def append(self, values: list[float]):
         '''
         Append one sample (for each series) at the next x value. Handles rolling window.
@@ -260,7 +264,7 @@ class MonitorWindow(QMainWindow):
                       is a data refresh period.
         Parent      - Owning parent of this window... default is None.
     '''
-    def __init__(self, refresh_ms: int = 1000, window = 120, parent=None):
+    def __init__(self, refresh_ms: int = 1000, keepWindow = DATA_WINDOW, parent=None):
         super().__init__(parent)
         
         # Get all the filters loaded
@@ -293,7 +297,7 @@ class MonitorWindow(QMainWindow):
             title="CPU Utilization",
             series_defs=[ (name, None) for name in self.cpuload.cpuNames ],
             y_min=0, y_max=100,
-            window=120
+            window=keepWindow
             )
         
         series = [("CPU", None)]
@@ -305,7 +309,7 @@ class MonitorWindow(QMainWindow):
             title="Temperature (°C)",
             series_defs= series,
             y_min=20, y_max=80,
-            window=window
+            window=keepWindow
             )
         
         if self.cpuinfo.model == 5:
@@ -317,9 +321,9 @@ class MonitorWindow(QMainWindow):
 
             self.fan_chart = RollingChart(
                 title="Fan Speed",
-                series_defs=series,
+                series_defs=[("RPM",None)],
                 y_min=0,y_max=6000,
-                window=window
+                window=keepWindow
             )
         else:
             self.fan_chart = None
@@ -334,7 +338,7 @@ class MonitorWindow(QMainWindow):
             title="Disk I/O",
             series_defs=series,
             range_y=[("Bytes/s", 1),("KiB/s", 1024),("MiB/s", 1024*1024),("GiB/s", 1024*1024*1024)],
-            window=window,
+            window=keepWindow,
         )
         
         self.networkFilter   = self.config.getValueAsList( 'network', 'device_ignore')
@@ -348,7 +352,21 @@ class MonitorWindow(QMainWindow):
             title="Network I/O",
             series_defs=series,
             range_y=[("Bytes/s", 1),("KiB/s", 1024),("MiB/s", 1024*1024),("GiB/s", 1024*1024*1024)],
-            window=window,
+            window=keepWindow,
+        )
+        
+        self.networkFilter   = self.config.getValueAsList( 'network', 'device_ignore')
+        self.network = NetworkLoad(self.networkFilter)
+        series = []
+        for name in self.network.names:
+            series.append( (f"{name} Read", None) )
+            series.append( (f"{name} Write", None) )
+        
+        self.network_chart = RollingChartDynamic(
+            title="Network I/O",
+            series_defs=series,
+            range_y=[("Bytes/s", 1),("KiB/s", 1024),("MiB/s", 1024*1024),("GiB/s", 1024*1024*1024)],
+            window=keepWindow,
         )
 
         # Layout: 2x2 grid (CPU, NVMe on top; IO full width bottom)
@@ -374,9 +392,10 @@ class MonitorWindow(QMainWindow):
         This routine is called periodically, as setup in the __init__ functon.  Since this
         routine calls out to other things, we want to make sure that there is no possible
         exception, so everything needs to be wrapped in a handler.
-        
         '''
-            
+        
+        gc.collect()
+        
         # Obtain the current fan speed
         if self.cpuinfo.model == 5:
             try:
@@ -443,6 +462,7 @@ class MonitorWindow(QMainWindow):
         self.use_chart.append( values )
 
 def main():
+    gc.enable()
     app = QApplication(sys.argv)
     w = MonitorWindow(refresh_ms=1000)
     w.show()
