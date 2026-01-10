@@ -24,6 +24,10 @@
 #include <linux/sched.h>
 #include <generated/utsrelease.h>
 
+
+#define VERSION_MAJOR	1
+#define VERSION_MINOR	0
+
 enum test_power_id {
     ONEUP_BATTERY,
     ONEUP_AC,
@@ -536,7 +540,7 @@ static int __init oneup_power_init(void)
     int i;
     int ret;
 
-    PR_INFO( "Starting Power monitor..." );
+    PR_INFO( "Starting Power monitor version %d.%d...",VERSION_MAJOR,VERSION_MINOR );
     BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_supplies));
     BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_configs));
 
