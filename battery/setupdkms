@@ -1,0 +1,16 @@
+#!/bin/bash
+
+DKMS_DEST=/usr/src/oneUpPower-1.0
+DKMS_SRC=$DKMS_DEST/src
+#
+# Setup DKMS
+#
+sudo mkdir -p $DKMS_SRC
+sudo cp ./dkms/dkms.conf $DKMS_DEST/dkms.conf
+sudo cp ./dkms/postinstall $DKMS_DEST/postinstall
+sudo cp ./dkms/Makefile $DKMS_SRC/Makefile
+sudo cp oneUpPower.c $DKMS_SRC/oneUpPower.c
+
+sudo dkms add -m oneUpPower -v 1.0
+sudo dkms build -m oneUpPower -v 1.0
+#sudo dkms install -m oneUpPower -v 1.0

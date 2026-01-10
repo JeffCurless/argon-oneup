@@ -1,8 +1,14 @@
 
 obj-m += oneUpPower.o
 
-# Build with:
-#   make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-# Clean:
-#   make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+KVERSION := $(shell uname -r)
+KDIR := /lib/modules/$(KVERSION)/build
+PWD := $(shell pwd)
 
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
+
+.PHONY: all clean
