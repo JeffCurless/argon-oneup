@@ -1,0 +1,10 @@
+#!/bin/bash
+#sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+if ! grep -qF "oneUpPower" /etc/modules
+then
+    sudo sh -c 'echo "oneUpPower" >> /etc/modules'
+fi
+sudo sh -c 'echo "options oneUpPower soc_shutdown=5" > /etc/modprobe.d/oneUpPower.conf'
+sudo depmod -a
+sudo insmod oneUpPower.ko
+sync
