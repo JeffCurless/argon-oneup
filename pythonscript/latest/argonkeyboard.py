@@ -11,9 +11,7 @@
 from evdev import InputDevice, categorize, ecodes, list_devices
 from select import select
 
-
 import subprocess
-
 
 import sys
 import os
@@ -26,12 +24,22 @@ from queue import Queue
 UPS_LOGFILE="/dev/shm/upslog.txt"
 KEYBOARD_LOCKFILE="/dev/shm/argononeupkeyboardlock.txt"
 
+
+KEYCODE_BRIGHTNESSUP = "KEY_BRIGHTNESSUP"
+KEYCODE_BRIGHTNESSDOWN = "KEY_BRIGHTNESSDOWN"
+KEYCODE_VOLUMEUP = "KEY_VOLUMEUP"
+KEYCODE_VOLUMEDOWN = "KEY_VOLUMEDOWN"
+KEYCODE_PAUSE = "KEY_PAUSE"
+KEYCODE_MUTE = "KEY_MUTE"
+
+
 ###################
 # Utilty Functions
 ###################
 
 # Debug Logger
 def debuglog(typestr, logstr):
+	#return
 	try:
 		DEBUGFILE="/dev/shm/argononeupkeyboarddebuglog.txt"
 		tmpstrpadding = "                      "
@@ -43,19 +51,19 @@ def debuglog(typestr, logstr):
 
 def runcmdlist(key, cmdlist):
 	try:
-		result = subprocess.run(cmdlist,
+		cmdresult = subprocess.run(cmdlist,
 			capture_output=True,
 			text=True,
 			check=True
 		)
-		#debuglog(key+"-result-output",str(result.stdout))
-		if result.stderr:
-			debuglog(key+"-result-error",str(result.stderr))
-		#debuglog(key+"-result-code",str(result.returncode))
+		#debuglog(key+"-result-output",str(cmdresult.stdout))
+		if cmdresult.stderr:
+			debuglog(key+"-result-error",str(cmdresult.stderr))
+		#debuglog(key+"-result-code",str(cmdresult.returncode))
 
 	except subprocess.CalledProcessError as e:
 		debuglog(key+"-error-output",str(e.stdout))
-		if result.stderr:
+		if e.stderr:
 			debuglog(key+"-error-error",str(e.stderr))
 		debuglog(key+"-error-code",str(e.returncode))
 	except FileNotFoundError:
@@ -67,32 +75,33 @@ def runcmdlist(key, cmdlist):
 			debuglog(key+"-error-other", "Other Error")
 
 def createlockfile(fname):
-	try:
-		if os.path.isfile(fname):
-			return True
-	except Exception as checklockerror:
-		try:
-			debuglog("keyboard-lock-error", str(checklockerror))
-		except:
-			debuglog("keyboard-lock-error", "Error Checking Lock File")
-	try:
-		with open(fname, "w") as txt_file:
-			txt_file.write(time.asctime(time.localtime(time.time()))+"\n")
-	except Exception as lockerror:
-		try:
-			debuglog("keyboard-lock-error", str(lockerror))
-		except:
-			debuglog("keyboard-lock-error", "Error Creating Lock File")
+	# try:
+	# 	if os.path.isfile(fname):
+	# 		return True
+	# except Exception as checklockerror:
+	# 	try:
+	# 		debuglog("keyboard-lock-error", str(checklockerror))
+	# 	except:
+	# 		debuglog("keyboard-lock-error", "Error Checking Lock File")
+	# try:
+	# 	with open(fname, "w") as txt_file:
+	# 		txt_file.write(time.asctime(time.localtime(time.time()))+"\n")
+	# except Exception as lockerror:
+	# 	try:
+	# 		debuglog("keyboard-lock-error", str(lockerror))
+	# 	except:
+	# 		debuglog("keyboard-lock-error", "Error Creating Lock File")
 	return False
 
 def deletelockfile(fname):
-	try:
-		os.remove(fname)
-	except Exception as lockerror:
-		try:
-			debuglog("keyboard-lock-error", str(lockerror))
-		except:
-			debuglog("keyboard-lock-error", "Error Removing Lock File")
+	# try:
+	# 	os.remove(fname)
+	# except Exception as lockerror:
+	# 	try:
+	# 		debuglog("keyboard-lock-error", str(lockerror))
+	# 	except:
+	# 		debuglog("keyboard-lock-error", "Error Removing Lock File")
+	return True
 
 
 # System Notifcation
@@ -147,9 +156,13 @@ def keyboardevent_getdevicepaths():
 				# Keyboard has EV_KEY (key) and EV_REP (autorepeat)
 				if ecodes.KEY_BRIGHTNESSDOWN in keyeventlist and ecodes.KEY_BRIGHTNESSDOWN in keyeventlist:
 					outlist.append(path)
+					#debuglog("keyboard-device-keys", path)
+					#debuglog("keyboard-device-keys", str(keyeventlist))
 				elif ecodes.KEY_F2 in keyeventlist and ecodes.KEY_F3 in keyeventlist:
 					# Keyboards with FN key sometimes do not include KEY_BRIGHTNESS in declaration
 					outlist.append(path)
+					#debuglog("keyboard-device-keys", path)
+					#debuglog("keyboard-device-keys", str(keyeventlist))
 				tmpdevice.close()
 			except:
 				pass
@@ -169,11 +182,32 @@ def keyboardevent_devicechanged(curlist, newlist):
 		pass
 	return False
 
-def keyboardevent_getbrigthnessinfo(defaultlevel=50):
+def keyboardevent_getbrigthnesstoolid():
+	toolid = 0
+	try:
+		output = subprocess.check_output(["ddcutil", "--version"], text=True, stderr=subprocess.DEVNULL)
+		lines = output.splitlines()
+		if len(lines) > 0:
+			tmpline = lines[0].strip()
+			toolid = int(tmpline.split(" ")[1].split(".")[0])
+	except Exception as einit:
+		try:
+			debuglog("keyboard-brightness-tool-error", str(einit))
+		except:
+			debuglog("keyboard-brightness-tool-error", "Error getting tool id value")
+
+	debuglog("keyboard-brightness-tool", toolid)
+	return toolid
+
+def keyboardevent_getbrigthnessinfo(toolid, defaultlevel=50):
 	level = defaultlevel
 	try:
 		# VCP code x10(Brightness       ): current value = 90, max value = 100
-		output = subprocess.check_output(["ddcutil", "getvcp", "10"], text=True, stderr=subprocess.DEVNULL)
+		if toolid > 1:
+			# Disabled dynamic sleep "--disable-dynamic-sleep", "--sleep-multiplier", "0.1"
+			output = subprocess.check_output(["ddcutil", "--disable-dynamic-sleep", "--sleep-multiplier", "0.1", "getvcp", "10"], text=True, stderr=subprocess.DEVNULL)
+		else:
+			output = subprocess.check_output(["ddcutil", "--sleep-multiplier", "0.1", "getvcp", "10"], text=True, stderr=subprocess.DEVNULL)
 		debuglog("keyboard-brightness-info", output)
 		level = int(output.split(":")[-1].split(",")[0].split("=")[-1].strip())
 	except Exception as einit:
@@ -188,24 +222,29 @@ def keyboardevent_getbrigthnessinfo(defaultlevel=50):
 		}
 
 
-def keyboardevent_adjustbrigthness(baselevel, adjustval=5):
+def keyboardevent_adjustbrigthness(toolid, baselevel, adjustval=5):
 	curlevel = baselevel
 	if adjustval == 0:
 		return {
 			"level": baselevel
 		}
 
-	try:
-		tmpobj = keyboardevent_getbrigthnessinfo(curlevel)
-		curlevel = tmpobj["level"]
-	except Exception:
-		pass
+	# Moved reading because ddcutil has delay
+	# try:
+	# 	tmpobj = keyboardevent_getbrigthnessinfo(toolid, curlevel)
+	# 	curlevel = tmpobj["level"]
+	# except Exception:
+	# 	pass
 
 	tmpval = max(10, min(100, curlevel + adjustval))
 	if tmpval != curlevel:
 		try:
 			debuglog("keyboard-brightness", str(curlevel)+"% to "+str(tmpval)+"%")
-			runcmdlist("brightness", ["ddcutil", "setvcp", "10", str(tmpval)])
+			if toolid > 1:
+				# Disabled dynamic sleep "--disable-dynamic-sleep", "--sleep-multiplier", "0.1"
+				runcmdlist("brightness", ["ddcutil", "--disable-dynamic-sleep", "--sleep-multiplier", "0.1", "setvcp", "10", str(tmpval)])
+			else:
+				runcmdlist("brightness", ["ddcutil", "--sleep-multiplier", "0.1", "setvcp", "10", str(tmpval)])
 			notifymessage("Brightness: "+str(tmpval)+"%", False)
 		except Exception as adjusterr:
 			try:
@@ -217,7 +256,7 @@ def keyboardevent_adjustbrigthness(baselevel, adjustval=5):
 				}
 
 	# DEBUG: Checking
-	#keyboardevent_getbrigthnessinfo(tmpval)
+	#keyboardevent_getbrigthnessinfo(toolid, tmpval)
 	return {
 			"level": tmpval
 		}
@@ -351,12 +390,12 @@ def keyboardevent_adjustvolume(baselevel, basemuted, adjustval=5):
 				"muted": basemuted
 			}
 
-	try:
-		tmpobj = keyboardevent_getvolumeinfo(deviceidstr, curlevel, curmuted)
-		curlevel = tmpobj["level"]
-		curmuted = tmpobj["muted"]
-	except Exception:
-		pass
+	# try:
+	# 	tmpobj = keyboardevent_getvolumeinfo(deviceidstr, curlevel, curmuted)
+	# 	curlevel = tmpobj["level"]
+	# 	curmuted = tmpobj["muted"]
+	# except Exception:
+	# 	pass
 
 	tmpmuted = curmuted
 	if adjustval == 0:
@@ -413,21 +452,197 @@ def keyboardevent_adjustvolume(baselevel, basemuted, adjustval=5):
 			"muted": tmpmuted
 		}
 
+def keyboard_getlayoutfieldvalue(tmpval):
+	debuglog("keyboard-layout-lang", tmpval)
+	if "us" in tmpval:
+		debuglog("keyboard-layout-langout", "us")
+		return "us"
+	debuglog("keyboard-layout-langout", "gb")
+	return "gb"	# uk, gb, etc
+	#return tmpval
 
 
+def keyboard_getdevicefw(kbdevice):
+	# info: vendor 0x6080=24704, product 0x8062=32866
+	try:
+		if kbdevice.info.vendor == 24704 and kbdevice.info.product == 32866:
+			# Special HID
+			return "314"
+	except Exception as infoerr:
+		pass
+
+	return ""
 
 
-def keyboardevent_check(readq):
+def keyboardevemt_keyhandler(readq):
+
 	ADJUSTTYPE_NONE=0
 	ADJUSTTYPE_BRIGHTNESS=1
 	ADJUSTTYPE_VOLUME=2
 	ADJUSTTYPE_MUTE=3
 	ADJUSTTYPE_BATTERYINFO=4
 
+	DATAREFRESHINTERVALSEC = 10
+
+	PRESSWAITINTERVALSEC = 0.5
+	FIRSTHOLDINTERVALSEC = 0.5
+	HOLDWAITINTERVALSEC = 0.5
+
+
+	# Get current levels
+	volumetime = time.time()
+	curvolumemuted = 0
+	curvolume = 50
+
+	brightnesstime = volumetime
+	curbrightness = 50
+	brightnesstoolid = 0
+
+	try:
+		brightnesstoolid = keyboardevent_getbrigthnesstoolid()
+	except Exception:
+		brightnesstoolid = 0
+		pass
+
+	try:
+		tmpobj = keyboardevent_getbrigthnessinfo(brightnesstoolid)
+		curbrightness = tmpobj["level"]
+	except Exception:
+		pass
+
+	try:
+		tmpobj = keyboardevent_getvolumeinfo()
+		curvolumemuted = tmpobj["muted"]
+		curvolume = tmpobj["level"]
+	except Exception:
+		pass
+
+	while True:
+		try:
+			tmpkeymode = 0
+			tmpkeycode = ""
+			adjustval = 0
+			adjusttype = ADJUSTTYPE_NONE
+
+			tmpcode = readq.get() # Blocking
+			try:
+				codeelements = tmpcode.split("+")
+				if len(codeelements) == 2:
+					if codeelements[0] == "PRESS":
+						tmpkeymode = 1
+					else:
+						tmpkeymode = 2
+					tmpkeycode = codeelements[1]
+				elif tmpcode == "EXIT":
+					readq.task_done()
+					return
+
+			except Exception:
+				tmpkeycode = ""
+				tmpkeymode = 0
+				pass
+			tmptime = time.time()
+			if tmpkeycode in [KEYCODE_BRIGHTNESSDOWN, KEYCODE_BRIGHTNESSUP]:
+				if tmpkeymode == 1 and tmptime - brightnesstime > DATAREFRESHINTERVALSEC:
+					# Do not update value during hold
+					try:
+						tmpobj = keyboardevent_getbrigthnessinfo(brightnesstoolid)
+						curbrightness = tmpobj["level"]
+					except Exception:
+						pass
+
+				adjusttype = ADJUSTTYPE_BRIGHTNESS
+				if tmpkeycode == KEYCODE_BRIGHTNESSDOWN:
+					adjustval = -5*tmpkeymode
+				else:
+					adjustval = 5*tmpkeymode
+				brightnesstime = tmptime
+			elif tmpkeycode in [KEYCODE_MUTE, KEYCODE_VOLUMEDOWN, KEYCODE_VOLUMEUP]:
+				if tmpkeymode == 1 and tmptime - volumetime > DATAREFRESHINTERVALSEC and tmpkeymode == 1:
+					# Do not update value during hold
+					try:
+						tmpobj = keyboardevent_getvolumeinfo()
+						curvolumemuted = tmpobj["muted"]
+						curvolume = tmpobj["level"]
+					except Exception:
+						pass
+
+				if tmpkeycode == KEYCODE_MUTE:
+					adjusttype = ADJUSTTYPE_MUTE
+					adjustval = 0
+				else:
+					adjusttype = ADJUSTTYPE_VOLUME
+					if tmpkeycode == KEYCODE_VOLUMEDOWN:
+						adjustval = -5*tmpkeymode
+					else:
+						adjustval = 5*tmpkeymode
+				volumetime = tmptime
+
+			elif tmpkeycode == KEYCODE_PAUSE:
+				adjusttype = ADJUSTTYPE_BATTERYINFO
+			else:
+				readq.task_done()
+				continue
+
+			try:
+				tmplockfilea = KEYBOARD_LOCKFILE+".a"
+				if createlockfile(tmplockfilea) == False:
+					# Debug ONLY
+					# if tmpkeymode == 1:
+					# 	debuglog("keyboard-event", "Press Key Code: "+str(tmpkeycode))
+					# else:
+					# 	debuglog("keyboard-event", "Hold Key Code: "+str(tmpkeycode))
+
+					if adjusttype == ADJUSTTYPE_BRIGHTNESS:
+						try:
+							tmpobj = keyboardevent_adjustbrigthness(brightnesstoolid, curbrightness, adjustval)
+							curbrightness = tmpobj["level"]
+						except Exception as brightnesserr:
+							try:
+								debuglog("keyboard-brightnessother-error", str(brightnesserr))
+							except:
+								debuglog("keyboard-brightnessother-error", "Error adjusting value")
+							pass
+					elif adjusttype == ADJUSTTYPE_VOLUME or adjusttype == ADJUSTTYPE_MUTE:
+						try:
+							tmpobj = keyboardevent_adjustvolume(curvolume, curvolumemuted, adjustval)
+							curvolumemuted = tmpobj["muted"]
+							curvolume = tmpobj["level"]
+						except Exception as volumeerr:
+							try:
+								debuglog("keyboard-volumeother-error", str(volumeerr))
+							except:
+								debuglog("keyboard-volumeother-error", "Error adjusting value")
+							pass
+					elif adjusttype == ADJUSTTYPE_BATTERYINFO:
+						outobj = battery_loadlogdata()
+						try:
+							notifymessage(outobj["power"], False)
+						except:
+							pass
+					deletelockfile(tmplockfilea)
+
+
+			except Exception as keyhandlererr:
+				try:
+					debuglog("keyboard-handlererror", str(keyhandleerr))
+				except:
+					debuglog("keyboard-handlererror", "Error")
+
+			readq.task_done()
+
+		except Exception as mainerr:
+			time.sleep(10)
+		# While True
+
+
+def keyboardevent_monitor(writeq):
+
 	READTIMEOUTSECS = 1.0
 
-	PRESSWAITINTERVALSEC = 2
-	HOLDWAITINTERVALSEC = 1
+	FIRSTHOLDINTERVALSEC = 0.5
+	HOLDWAITINTERVALSEC = 0.5
+
 	while True:
 		try:
 			keypresstimestamp = {}
@@ -436,6 +651,7 @@ def keyboardevent_check(readq):
 			devicelist = []
 			devicefdlist = []
 			devicepathlist = keyboardevent_getdevicepaths()
+			devicefwlist = []
 
 			deviceidx = 0
 			while deviceidx < len(devicepathlist):
@@ -443,32 +659,15 @@ def keyboardevent_check(readq):
 					tmpdevice = InputDevice(devicepathlist[deviceidx])
 					devicelist.append(tmpdevice)
 					devicefdlist.append(tmpdevice.fd)
+					devicefwlist.append(keyboard_getdevicefw(tmpdevice))
+					#debuglog("keyboard-device-info", devicepathlist[deviceidx])
+					#debuglog("keyboard-device-info", str(tmpdevice.info))
 				except Exception as deverr:
 					try:
-						debuglog("keyboard-deviceerror-", str(deverr)+ " "+ devicepathlist[deviceidx])
+						debuglog("keyboard-deviceerror", str(deverr)+ " "+ devicepathlist[deviceidx])
 					except:
 						debuglog("keyboard-deviceerror", "Error "+devicepathlist[deviceidx])
 				deviceidx = deviceidx + 1
-
-
-			# Get current levels
-			curvolumemuted = 0
-			curvolume = 50
-
-			curbrightness = 50
-
-			try:
-				tmpobj = keyboardevent_getbrigthnessinfo()
-				curbrightness = tmpobj["level"]
-			except Exception:
-				pass
-
-			try:
-				tmpobj = keyboardevent_getvolumeinfo()
-				curvolumemuted = tmpobj["muted"]
-				curvolume = tmpobj["level"]
-			except Exception:
-				pass
 
 			try:
 				debuglog("keyboard-update", str(len(devicefdlist))+" Devices")
@@ -478,9 +677,11 @@ def keyboardevent_check(readq):
 					r, w, x = select(devicefdlist, [], [], READTIMEOUTSECS)
 					for fd in r:
 						found = False
+						curdevicefw = ""
 						deviceidx = 0
 						while deviceidx < len(devicefdlist):
 							if devicefdlist[deviceidx] == fd:
+								curdevicefw = devicefwlist[deviceidx]
 								found = True
 								break
 							deviceidx = deviceidx + 1
@@ -493,131 +694,69 @@ def keyboardevent_check(readq):
 									if event.type == ecodes.EV_KEY:
 										key_event = categorize(event)
 										keycodelist = []
-										if event.value == 1 or event.value == 0:
-											#debuglog("keyboard-event", "Mode:"+str(event.value)+" Key Code: "+str(key_event.keycode))
+										# 2 hold, 0 release, 1 press
+										if event.value == 2 or event.value == 1:
+											debuglog("keyboard-event", "Mode:"+str(event.value)+" Key Code: "+str(key_event.keycode))
 
 											if isinstance(key_event.keycode, str):
 												keycodelist = [key_event.keycode]
 											else:
 												keycodelist = key_event.keycode
+										else:
+											continue
 
 										keycodelistidx = 0
 										while keycodelistidx < len(keycodelist):
 											tmpkeycode = keycodelist[keycodelistidx]
+											if tmpkeycode == "KEY_SYSRQ":
+												# This gets fired for some devices
+												tmpkeycode = KEYCODE_PAUSE
+											elif curdevicefw == "314":
+												# Remap printscreen event as pause and vice versa for special handling
+												if tmpkeycode == "KEY_PRINTSCREEN":
+													tmpkeycode = KEYCODE_PAUSE
+												elif tmpkeycode == KEYCODE_PAUSE:
+													# Some other key so it will not fire
+													tmpkeycode = "KEY_PRINTSCREEN"
+											debuglog("keyboard-event", "FW:" + curdevicefw+ " Key Code: "+tmpkeycode + " Press:"+keycodelist[keycodelistidx])
+
+
 											keycodelistidx = keycodelistidx + 1
-											if tmpkeycode not in ["KEY_BRIGHTNESSDOWN", "KEY_BRIGHTNESSUP", "KEY_VOLUMEDOWN", "KEY_VOLUMEUP"]:
-												if event.value == 0:
-													# Hold for unhandled keys
+											if tmpkeycode not in [KEYCODE_BRIGHTNESSDOWN, KEYCODE_BRIGHTNESSUP, KEYCODE_VOLUMEDOWN, KEYCODE_VOLUMEUP]:
+												if event.value == 2:
+													# Skip hold for unhandled keys
 													continue
-												elif tmpkeycode not in ["KEY_PAUSE", "KEY_MUTE"]:
-													# Press for unhandled keys
+												elif tmpkeycode not in [KEYCODE_PAUSE, KEYCODE_MUTE]:
+													# Skip press for unhandled keys
 													continue
 
-											adjustval = 0
-											adjusttype = ADJUSTTYPE_NONE
-
-											if event.value == 1:
-												# Press
-												debuglog("keyboard-event", "Press Key Code: "+str(tmpkeycode))
-
-												tmptime = time.time()
-												# Guard time for press
-												if tmpkeycode not in ["KEY_MUTE"]:
-													# Buttons w/o guard time
-													keypresstimestamp[tmpkeycode] = tmptime
-												elif tmpkeycode in keypresstimestamp:
-													if (tmptime - keypresstimestamp[tmpkeycode]) >= PRESSWAITINTERVALSEC:
-														keypresstimestamp[tmpkeycode] = tmptime
-													else:
-														continue
-												else:
-													# First Press
-													keypresstimestamp[tmpkeycode] = tmptime
-
-												if tmpkeycode == "KEY_BRIGHTNESSDOWN" or tmpkeycode == "KEY_BRIGHTNESSUP":
-													adjusttype = ADJUSTTYPE_BRIGHTNESS
-													if tmpkeycode == "KEY_BRIGHTNESSDOWN":
-														adjustval = -5
-													else:
-														adjustval = 5
-												elif tmpkeycode == "KEY_VOLUMEDOWN" or tmpkeycode == "KEY_VOLUMEUP":
-													adjusttype = ADJUSTTYPE_VOLUME
-													if tmpkeycode == "KEY_VOLUMEDOWN":
-														adjustval = -5
-													else:
-														adjustval = 5
-												elif tmpkeycode == "KEY_PAUSE":
-													adjusttype = ADJUSTTYPE_BATTERYINFO
-												elif tmpkeycode == "KEY_MUTE":
-													adjusttype = ADJUSTTYPE_MUTE
-													adjustval = 0
-
-											elif event.value == 0:
-												# Hold
-												debuglog("keyboard-event", "Hold Key Code: "+str(tmpkeycode))
-
-												tmptime = time.time()
+											tmptime = time.time()
+											finalmode = event.value
+											if event.value == 2:
+												# Hold needs checking
 												if tmpkeycode in keypresstimestamp:
 													# Guard time before first for hold
-													if (tmptime - keypresstimestamp[tmpkeycode]) >= PRESSWAITINTERVALSEC:
+													if (tmptime - keypresstimestamp[tmpkeycode]) >= FIRSTHOLDINTERVALSEC:
 														# Guard time for hold
 														if tmpkeycode in keyholdtimestamp:
-															if (tmptime - keyholdtimestamp[tmpkeycode]) >= HOLDWAITINTERVALSEC:
-																keyholdtimestamp[tmpkeycode] = tmptime
-															else:
+															if (tmptime - keyholdtimestamp[tmpkeycode]) < HOLDWAITINTERVALSEC:
+																#debuglog("keyboard-event", "Hold Key Code: "+str(tmpkeycode)+" - Skip")
 																continue
-														else:
-															# First Hold event
-															keyholdtimestamp[tmpkeycode] = tmptime
 													else:
+														#debuglog("keyboard-event", "Hold Key Code: "+str(tmpkeycode)+" - Skip")
 														continue
 												else:
 													# Should not happen, but treat as if first press
-													keypresstimestamp[tmpkeycode] = tmptime
+													finalmode = 1
 
-												if tmpkeycode == "KEY_BRIGHTNESSDOWN" or tmpkeycode == "KEY_BRIGHTNESSUP":
-													adjusttype = ADJUSTTYPE_BRIGHTNESS
-													if tmpkeycode == "KEY_BRIGHTNESSDOWN":
-														adjustval = -10
-													else:
-														adjustval = 10
-												elif tmpkeycode == "KEY_VOLUMEDOWN" or tmpkeycode == "KEY_VOLUMEUP":
-													adjusttype = ADJUSTTYPE_VOLUME
-													if tmpkeycode == "KEY_VOLUMEDOWN":
-														adjustval = -10
-													else:
-														adjustval = 10
+												#debuglog("keyboard-event", "Mode:"+str(event.value) + " Final:"+str(finalmode)+" " +str(tmpkeycode))
 
-
-
-											tmplockfilea = KEYBOARD_LOCKFILE+".a"
-											if createlockfile(tmplockfilea) == False:
-												# Debug ONLY
-												if event.value == 1:
-													debuglog("keyboard-event", "Press Key Code: "+str(tmpkeycode)+ " => "+str(adjusttype))
-												else:
-													debuglog("keyboard-event", "Hold Key Code: "+str(tmpkeycode)+ " => "+str(adjusttype))
-
-												if adjusttype == ADJUSTTYPE_BRIGHTNESS:
-													try:
-														tmpobj = keyboardevent_adjustbrigthness(curbrightness, adjustval)
-														curbrightness = tmpobj["level"]
-													except Exception:
-														pass
-												elif adjusttype == ADJUSTTYPE_VOLUME or adjusttype == ADJUSTTYPE_MUTE:
-													try:
-														tmpobj = keyboardevent_adjustvolume(curvolume, curvolumemuted, adjustval)
-														curvolumemuted = tmpobj["muted"]
-														curvolume = tmpobj["level"]
-													except Exception:
-														pass
-												elif adjusttype == ADJUSTTYPE_BATTERYINFO:
-													outobj = battery_loadlogdata()
-													try:
-														notifymessage(outobj["power"], False)
-													except:
-														pass
-												deletelockfile(tmplockfilea)
+											if finalmode == 1:
+												keypresstimestamp[tmpkeycode] = tmptime
+												writeq.put("PRESS+"+tmpkeycode)
+											else:
+												keyholdtimestamp[tmpkeycode] = tmptime
+												writeq.put("HOLD+"+tmpkeycode)
 
 								except Exception as keyhandleerr:
 									try:
@@ -625,9 +764,6 @@ def keyboardevent_check(readq):
 									except:
 										debuglog("keyboard-keyerror", "Error")
 
-					else:
-						# No events received within the timeout
-						pass
 					newpathlist = keyboardevent_getdevicepaths()
 					if keyboardevent_devicechanged(devicepathlist, newpathlist):
 						debuglog("keyboard-update", "Device list changed")
@@ -650,6 +786,10 @@ def keyboardevent_check(readq):
 		except Exception as mainerr:
 			time.sleep(10)
 		# While True
+	try:
+		writeq.put("EXIT")
+	except Exception:
+		pass
 
 
 if len(sys.argv) > 1:
@@ -660,11 +800,18 @@ if len(sys.argv) > 1:
 		else:
 			try:
 				debuglog("keyboard-service", "Service Starting")
-				keyboardevent_check("")
+				ipcq = Queue()
+				t1 = Thread(target = keyboardevemt_keyhandler, args =(ipcq, ))
+				t2 = Thread(target = keyboardevent_monitor, args =(ipcq, ))
+				t1.start()
+				t2.start()
+
+				ipcq.join()
+
 			except Exception as einit:
 				try:
 					debuglog("keyboard-service-error", str(einit))
 				except:
 					debuglog("keyboard-service-error", "Error")
-			checklockerror(KEYBOARD_LOCKFILE)
 			debuglog("keyboard-service", "Service Stopped")
+			deletelockfile(KEYBOARD_LOCKFILE)
