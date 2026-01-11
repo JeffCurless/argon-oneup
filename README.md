@@ -31,6 +31,15 @@ options oneUpPower soc_shutdown=5
 ```
 This controls the state of charge at which the system will automatically shudown.  The value is currently set to 5%, if the battery charge drops below this value, the laptop will shutdown, and you may lose work.  However, it will be a graceful shutdown, and the file system will be happy.
 
+### Dynamic Kernel Module Support (dkms) support
+
+If you don't want to have to remember to build oneUpPower.ko, you can run
+```
+./setupdkms
+```
+
+Which will setup dkms support for the driver, so than when a new kernel in installed, the driver will get built automatically.  This has been tested, howewever not on many platforms, or upgrade scenarios.  As such this shoud be treated as "alpha" quality scripts.
+
 ## Monitor
 
 Two monitoring applications:
