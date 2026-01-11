@@ -185,6 +185,14 @@ daemonconfigfile=/etc/$daemonname.conf
 
 lidconfigscript=$INSTALLATIONFOLDER/${basename}-lidconfig.sh
 
+
+for TMPDIRECTORY in "/lib/systemd/system"
+do
+	sudo mkdir -p "$TMPDIRECTORY"
+	sudo chmod 755 $TMPDIRECTORY
+	sudo chown root:root "$TMPDIRECTORY"
+done
+
 echo "Installing/Updating scripts and services ..."
 
 if [ ! -f $daemonconfigfile ]; then
@@ -402,17 +410,26 @@ then
 	sudo systemctl daemon-reload
 	sudo systemctl enable argononeupd.service
 	sudo systemctl start argononeupd.service
-
-	# Enable and Start User Service(s)
-	sudo systemctl --global enable argononeupduser.service
-	sudo systemctl --global start argononeupduser.service
-
 else
 	sudo systemctl daemon-reload
 	sudo systemctl restart argononeupd.service
-
-	sudo systemctl --global restart argononeupduser.service
 fi
+
+# Enable and Start User Service(s)
+for tmpuser in `awk -F: '{ if ($3 >= 1000) print $1 }' /etc/passwd`
+do
+	if [ "$tmpuser" != "nobody" ]
+	then
+		if [ "$setupmode" = "Setup" ]
+		then
+			sudo -u "$tmpuser" systemctl --user enable argononeupduser.service
+			sudo -u "$tmpuser" systemctl --user start argononeupduser.service
+
+		else
+			sudo -u "$tmpuser" systemctl --user restart argononeupduser.service
+		fi
+	fi
+done
 
 if [ "$CHECKPLATFORM" = "Raspbian" ]
 then

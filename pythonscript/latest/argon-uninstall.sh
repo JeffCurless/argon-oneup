@@ -98,8 +98,14 @@ then
 	sudo systemctl stop argonupsrtcd.service
 	sudo systemctl disable argonupsrtcd.service
 
-	sudo systemctl --global stop argononeupsduser.service
-	sudo systemctl --global disable argononeupsduser.service
+	for tmpuser in `awk -F: '{ if ($3 >= 1000) print $1 }' /etc/passwd`
+	do
+		if [ "$tmpuser" != "nobody" ]
+		then
+			sudo -u "$tmpuser" systemctl --user stop argononeupsduser.service
+			sudo -u "$tmpuser" systemctl --user disable argononeupsduser.service
+		fi
+	done
 
 	# Remove files
 	sudo rm /lib/systemd/system/argononeupsd.service
