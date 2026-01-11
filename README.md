@@ -35,6 +35,7 @@ This controls the state of charge at which the system will automatically shudown
 
 If you don't want to have to remember to build oneUpPower.ko, you can run
 ```
+cd battery
 ./setupdkms
 ```
 
