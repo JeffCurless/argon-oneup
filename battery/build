@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-HEADERS=6.12.47+rpt-rpi-v8
+#HEADERS=6.12.47+rpt-rpi-v8
 HEADERS=$(uname -r)
 make -C /lib/modules/$HEADERS/build M=$PWD clean
 make -C /lib/modules/$HEADERS/build M=$PWD modules
