@@ -8,7 +8,24 @@ Currently working on making a battey driver for the system, so that we can monit
 
 ### Build Instructions
 
-In order to build the driver;
+In order to build the driver, make sure you have build tools installed.  Depending on the OS version, different package names are required:
+
+Raspberry PI Trixie or Debian Based:
+```
+sudo apt install -y build-essential linux-headers-rpi-v8 dkms
+```
+
+Alpine:
+```
+sudo apk add build=base linux-dev dkms
+```
+
+Ubuntu:
+```
+sudo apt install build-essential linux-headers-generic dkms
+```
+
+To build:
 ```
 cd battery
 ./build
@@ -70,9 +87,6 @@ sda=-d sat
 
 ```
       
-### simple_monitor
-A simple monitor that dislays some system utilization
-
 ## config
 
 This directory contains changes I make to the /boot/firmware/config.txt file
