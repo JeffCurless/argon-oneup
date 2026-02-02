@@ -1,0 +1,53 @@
+#!/usr/bin/bash
+
+#
+# Get the OS we are running on
+#
+
+PLATFORM="unknown"
+PLATFORMVERSION=""
+PAKMAN="sudo apt install -y"
+
+if [ -f "/etc/os-release" ]
+then
+    source /etc/os-release
+    PLATFORM=$ID
+    PLATFORMVERSION=$VERSION_ID
+    OSNAME=$PRETTY_NAME
+    echo ${PLATFORMVERSION} | grep -e "\." > /dev/null
+    if [ $? -eq 0 ]
+    then
+	PLATFORMVERSIONNUM=`cut -d "." -f2 <<< $PLATFORMVERSION `
+	PLATFORMVERSION=`cut -d "." -f1 <<< $PLATFORMVERSION `
+    fi
+fi
+
+case $PLATFORM in
+    raspbian | debian)
+      echo "Installing for $OSNAME"
+      MODULES=(build-essential linux-headers-rpi-v8 dkms)
+      ;;
+
+    alpine)
+      echo "Installing for $OSNAME"
+      MODULES=(build-base linux-dev)
+      PAKMAN="sudo apk add -y"
+      ;;
+
+    ubuntu)
+      echo "Installing for $OSNAME"
+      MODULES=(build-essential linux-headers-generic dkms)
+      ;;
+
+    *)
+      echo "Installing on unknown platform: $OSNAME"
+      echo "Please report the following:"
+      cat /etc/os-release
+      exit
+      ;;
+esac
+
+for package in ${MODULES[@]}; do
+    echo "Installing $package"
+    $PAKMAN -y $package
+done
