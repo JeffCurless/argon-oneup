@@ -4,7 +4,7 @@ This repository contains all data related to the ONE UP laptop by Argon40
 
 ## Battery
 
-Currently working on making a battey driver for the system, so that we can monitor the battery using the standard toolbar plugin.  The basis of the driver is from the test_power.c driver that lives in the linux kernel tree.  The test code appears to be workng on non-trixie versions of the OS.  Once I have it working and cleaned up, I will be porting the python code from Argon40 to C for the driver to read the battery info in the same manner as they do.
+Created a battery driver for the system, so that we can monitor the battery using the standard toolbar plugin.  The basis of the driver is from the test_power.c driver that lives in the linux kernel tree.  The test code appears to be workng on trixie versions of the OS, with reports of it working on Ubuntu.
 
 ### Build Instructions
 
@@ -38,6 +38,18 @@ To remove it:
 ```
 
 Once the driver is loaded, go to the task bar and add a battery.  If there is already a battery plugin loaded, remove it, exit, and re-add.
+
+### Working with Argon40 Scripts
+
+If you installed the Argon40 scripts, and wish to disable their battery code for my driver, you will needs to stop a service, and disable it.
+
+The following commands will disable the service, (so it will not start again), and stop the service. 
+```
+systemctl disable argononeupd.service
+systemctl stop argononeupd.service
+```
+To restart the service, use enable instead of disable, and start instead of stop.
+
 
 ### oneUpPower.conf
 
