@@ -22,7 +22,7 @@ sudo apk add build=base linux-dev dkms
 
 Ubuntu:
 ```
-sudo apt install build-essential linux-headers-generic dkms
+sudo apt install build-essential linux-headers-`uname -r` dkms
 ```
 
 To build:
