@@ -25,8 +25,8 @@
 #include <generated/utsrelease.h>
 
 
-#define VERSION_MAJOR	1
-#define VERSION_MINOR	0
+#define VERSION_MAJOR   1
+#define VERSION_MINOR   0
 
 enum test_power_id {
     ONEUP_BATTERY,
@@ -38,8 +38,8 @@ enum test_power_id {
 // Useful definitions.  Note that the TOTAL_* definitions need to be worked out...
 //
 #define DRV_NAME                    "oneUpPower"
-#define PR_INFO( fmt, arg...)       printk( KERN_INFO DRV_NAME ":" fmt, ##arg )
-#define PR_ERR( fmt, arg... )       printk( KERN_ERR DRV_NAME ":" fmt, ##arg )
+#define PR_INFO( fmt, arg...)       printk( KERN_INFO DRV_NAME ": " fmt, ##arg )
+#define PR_ERR( fmt, arg... )       printk( KERN_ERR DRV_NAME ": " fmt, ##arg )
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)       // Time in seconds
 #define TOTAL_CHARGE                (4800 * 1000) 	   // Power in micro Amp Hours, uAH
 #define TOTAL_CHARGE_FULL_SECONDS   (((2*60)+30) * 60)  // Time to full charge in seconds
@@ -95,8 +95,8 @@ static int get_ac_property(struct power_supply *psy,
 //
 // Globals
 //
-static int soc_shutdown                 = 5;	     // Default setting is 5% of power left for critical
-static int ac_online                    = 1;	     // Are we connected to an external power source?
+static int soc_shutdown                 = 5;         // Default setting is 5% of power left for critical
+static int ac_online                    = 1;         // Are we connected to an external power source?
 static bool module_initialized          = false;     // Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
 
@@ -262,7 +262,7 @@ static int check_ac_power( struct i2c_client *client )
 // Determine that the current state of the battery is
 //
 // Parameters:
-//     client	- I2C device used to get information
+//     client  - I2C device used to get information
 //
 // Returns:
 //     Battery State of Charge in Percentage
@@ -395,9 +395,9 @@ static int system_monitor( void *args )
 // property is looked up and its value reuturned.
 //
 // Parameters:
-//     pst	- The power supply object
-//     psp	- The property we are looking for (as an integer)
-//     val	- A pointer to where the data should be stored.
+//     pst  - The power supply object
+//     psp  - The property we are looking for (as an integer)
+//     val  - A pointer to where the data should be stored.
 //
 // Returns:
 //     -EINVAL  - No such property, or not supported
@@ -426,13 +426,13 @@ static int get_ac_property(struct power_supply *psy,
 // This particular function simple returns the integer properties.
 //
 // Parmters:
-//     pst	- The power supply object
-//     psp	- The property we are looking for (as a integer)
-//     val	- A pointer to where th data should be stored.
+//     pst  - The power supply object
+//     psp  - The property we are looking for (as a integer)
+//     val  - A pointer to where th data should be stored.
 //
 // Returns:
-//     -EINVAL	- No such property, or not supported
-//     0	- Succssfully located the data
+//     -EINVAL  - No such property, or not supported
+//     0        - Succssfully located the data
 //
 static int get_battery_int_property( struct power_supply *psy,
                                      enum power_supply_property psp,
@@ -497,9 +497,9 @@ static int get_battery_int_property( struct power_supply *psy,
 // property is looked up and its value reuturned.
 //
 // Parameters:
-//     pst	- The power supply object
-//     psp	- The property we are looking for (as an integer)
-//     val	- A pointer to where the data should be stored.
+//     pst  - The power supply object
+//     psp  - The property we are looking for (as an integer)
+//     val  - A pointer to where the data should be stored.
 //
 // Returns:
 //     -EINVAL  - No such property, or not supported
