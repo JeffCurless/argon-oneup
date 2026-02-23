@@ -92,8 +92,8 @@ struct PowerStatus {
     .present            = 1,
     .technology         = POWER_SUPPLY_TECHNOLOGY_LION,
     .timeleft           = TOTAL_LIFE_SECONDS,
-    .temperature        = 300,          // tenths of °C; 300 = 30.0°C
-    .voltage            = (4200 * 1000), // uV
+    .temperature        = 300,              // tenths of °C; 300 = 30.0°C
+    .voltage            = (4200 * 1000),    // uV
 };
 
 //
@@ -239,7 +239,7 @@ static void set_power_states( void )
 
     if( ac_online ){
         if( capacity > 95 ){
-        battery.status = POWER_SUPPLY_STATUS_FULL;
+            battery.status = POWER_SUPPLY_STATUS_FULL;
         }
         else {
             battery.status = POWER_SUPPLY_STATUS_CHARGING;
@@ -363,12 +363,14 @@ static int restart_battery_ic( struct i2c_client *client )
 
         i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_RESTART );
         msleep( 500 );
+
         i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_ACTIVE );
         msleep( 500 );
 
         for( wait = 0; wait < 5; wait++ ) {
             if( kthread_should_stop() )
                 return -EINTR;
+
             icstate = i2c_smbus_read_byte_data( client, REG_ICSTATE );
             if( icstate >= 0 && (icstate & 0x0C) != 0 ) {
                 PR_INFO( "Battery IC activated.\n" );
@@ -415,10 +417,14 @@ static int init_battery_profile( struct i2c_client *client )
     //
     control = i2c_smbus_read_byte_data( client, REG_CONTROL );
     if( control == 0 ) {
+        //
         // IC is up; check if the profile-loaded flag is set
+        //
         socalert = i2c_smbus_read_byte_data( client, REG_SOCALERT );
         if( socalert >= 0 && (socalert & 0x80) != 0 ) {
+            //
             // Flag set; verify every profile byte
+            //
             profile_ok = true;
             for( i = 0; i < ARRAY_SIZE(battery_profile); i++ ) {
                 val = i2c_smbus_read_byte_data( client, REG_PROFILE + i );
@@ -438,7 +444,9 @@ static int init_battery_profile( struct i2c_client *client )
 
     PR_INFO( "Programming battery profile...\n" );
 
+    //
     // Restart then sleep the IC before writing
+    //
     ret = i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_RESTART );
     if( ret < 0 ) {
         PR_ERR( "Failed to restart IC before profile write: %d\n", ret );
@@ -453,7 +461,9 @@ static int init_battery_profile( struct i2c_client *client )
     }
     msleep( 500 );
 
+    //
     // Write the 80-byte battery model profile
+    //
     for( i = 0; i < ARRAY_SIZE(battery_profile); i++ ) {
         ret = i2c_smbus_write_byte_data( client, REG_PROFILE + i, battery_profile[i] );
         if( ret < 0 ) {
@@ -462,7 +472,9 @@ static int init_battery_profile( struct i2c_client *client )
         }
     }
 
+    //
     // Mark profile as loaded
+    //
     ret = i2c_smbus_write_byte_data( client, REG_SOCALERT, 0x80 );
     if( ret < 0 ) {
         PR_ERR( "Failed to set profile flag: %d\n", ret );
@@ -470,7 +482,9 @@ static int init_battery_profile( struct i2c_client *client )
     }
     msleep( 500 );
 
+    //
     // Disable IC interrupts
+    //
     ret = i2c_smbus_write_byte_data( client, REG_GPIOCONFIG, 0x00 );
     if( ret < 0 ) {
         PR_ERR( "Failed to configure GPIO: %d\n", ret );
@@ -478,7 +492,9 @@ static int init_battery_profile( struct i2c_client *client )
     }
     msleep( 500 );
 
+    //
     // Restart and wait for the IC to become ready
+    //
     ret = restart_battery_ic( client );
     if( ret != 0 ) {
         PR_ERR( "Battery IC failed to restart after profile update.\n" );
@@ -794,7 +810,9 @@ static void __exit oneup_power_exit(void)
         monitor_task = NULL;
     }
 
-    /* Let's see how we handle changes... */
+    //
+    // Let's see how we handle changes...
+    //
     ac_online = 0;
     battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
 
