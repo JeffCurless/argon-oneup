@@ -1,4 +1,5 @@
 #!/bin/bash
+sudo dkms remove -m oneUpPower -v 1.0
 sudo rmmod oneUpPower
 sudo rm -vf /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
 sudo sh -c "sed -i '/oneUpPower/d' /etc/modules"
