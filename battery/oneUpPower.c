@@ -22,11 +22,13 @@
 #include <linux/errno.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
+#include <linux/reboot.h>
 #include <generated/utsrelease.h>
 
 
 #define VERSION_MAJOR   1
 #define VERSION_MINOR   0
+#define VERSION_EDIT    2
 
 enum test_power_id {
     ONEUP_BATTERY,
@@ -41,7 +43,7 @@ enum test_power_id {
 #define PR_INFO( fmt, arg...)       printk( KERN_INFO DRV_NAME ": " fmt, ##arg )
 #define PR_ERR( fmt, arg... )       printk( KERN_ERR DRV_NAME ": " fmt, ##arg )
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)       // Time in seconds
-#define TOTAL_CHARGE                (4800 * 1000) 	   // Power in micro Amp Hours, uAH
+#define TOTAL_CHARGE                (4800 * 1000)       // Power in micro Amp Hours, uAH
 #define TOTAL_CHARGE_FULL_SECONDS   (((2*60)+30) * 60)  // Time to full charge in seconds
 
 
@@ -54,6 +56,19 @@ enum test_power_id {
 #define CURRENT_LOW_REG     0x0F
 #define SOC_HIGH_REG        0x04
 #define SOC_LOW_REG         0x05
+
+//
+// Battery IC profile/control registers (CW2217)
+//
+#define REG_CONTROL         0x08
+#define REG_GPIOCONFIG      0x0A
+#define REG_SOCALERT        0x0B
+#define REG_PROFILE         0x10
+#define REG_ICSTATE         0xA7
+
+#define CTRL_RESTART        0x30
+#define CTRL_SLEEP          0xF0
+#define CTRL_ACTIVE         0x00
 
 //
 // Needed data structures
@@ -77,8 +92,8 @@ struct PowerStatus {
     .present            = 1,
     .technology         = POWER_SUPPLY_TECHNOLOGY_LION,
     .timeleft           = TOTAL_LIFE_SECONDS,
-    .temperature        = 30,
-    .voltage            = (4200 * 1000), // uV
+    .temperature        = 300,              // tenths of °C; 300 = 30.0°C
+    .voltage            = (4200 * 1000),    // uV
 };
 
 //
@@ -99,6 +114,25 @@ static int soc_shutdown                 = 5;         // Default setting is 5% of
 static int ac_online                    = 1;         // Are we connected to an external power source?
 static bool module_initialized          = false;     // Has the driver been initialized?
 static struct task_struct *monitor_task = NULL;      // Place to store the monito task...
+
+//
+// Battery model profile for the CW2217 fuel gauge (80 bytes starting at REG_PROFILE).
+// This OCV curve was extracted from archive/kickstarter/argononeupd.py.
+// Without a matching profile the IC's SOC algorithm uses incorrect chemistry
+// data, causing inaccurate percentage readings especially near full and empty.
+//
+static const u8 battery_profile[] = {
+    0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xA8, 0xAA, 0xBE, 0xC6, 0xB8, 0xAE, 0xC2, 0x98,
+    0x82, 0xFF, 0xFF, 0xCA, 0x98, 0x75, 0x63, 0x55,
+    0x4E, 0x4C, 0x49, 0x98, 0x88, 0xDC, 0x34, 0xDB,
+    0xD3, 0xD4, 0xD3, 0xD0, 0xCE, 0xCB, 0xBB, 0xE7,
+    0xA2, 0xC2, 0xC4, 0xAE, 0x96, 0x89, 0x80, 0x74,
+    0x67, 0x63, 0x71, 0x8E, 0x9F, 0x85, 0x6F, 0x3B,
+    0x20, 0x00, 0xAB, 0x10, 0xFF, 0xB0, 0x73, 0x00,
+    0x00, 0x00, 0x64, 0x08, 0xD3, 0x77, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFA,
+};
 
 //
 // Properties for AC
@@ -168,7 +202,7 @@ static const struct power_supply_desc power_descriptions[] = {
 // Configurations
 //
 static const struct power_supply_config power_configs[] = {
-        {   /* battery */
+    {   /* battery */
     },
     {
         /* ac */
@@ -205,7 +239,7 @@ static void set_power_states( void )
 
     if( ac_online ){
         if( capacity > 95 ){
-        battery.status = POWER_SUPPLY_STATUS_FULL;
+            battery.status = POWER_SUPPLY_STATUS_FULL;
         }
         else {
             battery.status = POWER_SUPPLY_STATUS_CHARGING;
@@ -234,7 +268,11 @@ static int check_ac_power( struct i2c_client *client )
     int plugged_in;
 
     current_high = i2c_smbus_read_byte_data( client, CURRENT_HIGH_REG );
-    if( (current_high & 0x80) > 0 ){
+
+    //
+    // Bit 7 of the high byte: 1 = discharging (no AC), 0 = charging (AC present)
+    //
+    if( (current_high & 0x80) == 0x80 ){
         plugged_in = 0;
     }
     else{
@@ -296,9 +334,175 @@ static int check_battery_state( struct i2c_client *client )
 // plugged in.
 //
 static void shutdown_helper( void ){
-    static char * shutdown_argv[] ={ "/sbin/shutdown", "-h", "-P", "now", NULL };
-    
-    call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
+    orderly_poweroff( false );
+}
+
+//
+// restart_battery_ic
+//
+// Cycle the CW2217 control register to bring it out of sleep or error state,
+// then poll REG_ICSTATE until the IC reports it is ready (bits [3:2] non-zero).
+//
+// Parameters:
+//     client - I2C client for the battery controller
+//
+// Returns:
+//     0          - IC is active and ready
+//     -EINTR     - kthread stop was requested during the wait
+//     -ETIMEDOUT - IC did not become ready after retries
+//
+static int restart_battery_ic( struct i2c_client *client )
+{
+    int icstate;
+    int attempt;
+    int wait;
+
+    for( attempt = 0; attempt < 3; attempt++ ) {
+        if( kthread_should_stop() )
+            return -EINTR;
+
+        i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_RESTART );
+        msleep( 500 );
+
+        i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_ACTIVE );
+        msleep( 500 );
+
+        for( wait = 0; wait < 5; wait++ ) {
+            if( kthread_should_stop() )
+                return -EINTR;
+
+            icstate = i2c_smbus_read_byte_data( client, REG_ICSTATE );
+            if( icstate >= 0 && (icstate & 0x0C) != 0 ) {
+                PR_INFO( "Battery IC activated.\n" );
+                return 0;
+            }
+            msleep( 1000 );
+        }
+    }
+
+    PR_ERR( "Battery IC did not become ready.\n" );
+    return -ETIMEDOUT;
+}
+
+//
+// init_battery_profile
+//
+// Verify the 80-byte OCV curve stored in the CW2217 against the known-good
+// profile for this battery pack.  If the IC is inactive, the profile flag is
+// unset, or any byte mismatches, the IC is put to sleep, the full profile is
+// written, and the IC is restarted.
+//
+// Ported from battery_checkupdateprofile() in archive/kickstarter/argononeupd.py.
+//
+// Parameters:
+//     client - I2C client for the battery controller
+//
+// Returns:
+//     0  - Profile is valid (already matched or successfully updated)
+//    <0  - I2C error, or IC failed to restart after programming
+//
+static int init_battery_profile( struct i2c_client *client )
+{
+    int  control;
+    int  socalert;
+    int  val;
+    int  i;
+    int  ret;
+    bool profile_ok = false;
+
+    PR_INFO( "Checking battery profile...\n" );
+
+    //
+    // IC is active when REG_CONTROL reads back 0
+    //
+    control = i2c_smbus_read_byte_data( client, REG_CONTROL );
+    if( control == 0 ) {
+        //
+        // IC is up; check if the profile-loaded flag is set
+        //
+        socalert = i2c_smbus_read_byte_data( client, REG_SOCALERT );
+        if( socalert >= 0 && (socalert & 0x80) != 0 ) {
+            //
+            // Flag set; verify every profile byte
+            //
+            profile_ok = true;
+            for( i = 0; i < ARRAY_SIZE(battery_profile); i++ ) {
+                val = i2c_smbus_read_byte_data( client, REG_PROFILE + i );
+                if( val < 0 || (u8)val != battery_profile[i] ) {
+                    PR_INFO( "Battery profile mismatch at byte %d.\n", i );
+                    profile_ok = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if( profile_ok ) {
+        PR_INFO( "Battery profile is valid.\n" );
+        return 0;
+    }
+
+    PR_INFO( "Programming battery profile...\n" );
+
+    //
+    // Restart then sleep the IC before writing
+    //
+    ret = i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_RESTART );
+    if( ret < 0 ) {
+        PR_ERR( "Failed to restart IC before profile write: %d\n", ret );
+        return ret;
+    }
+    msleep( 500 );
+
+    ret = i2c_smbus_write_byte_data( client, REG_CONTROL, CTRL_SLEEP );
+    if( ret < 0 ) {
+        PR_ERR( "Failed to sleep IC before profile write: %d\n", ret );
+        return ret;
+    }
+    msleep( 500 );
+
+    //
+    // Write the 80-byte battery model profile
+    //
+    for( i = 0; i < ARRAY_SIZE(battery_profile); i++ ) {
+        ret = i2c_smbus_write_byte_data( client, REG_PROFILE + i, battery_profile[i] );
+        if( ret < 0 ) {
+            PR_ERR( "Failed to write profile byte %d: %d\n", i, ret );
+            return ret;
+        }
+    }
+
+    //
+    // Mark profile as loaded
+    //
+    ret = i2c_smbus_write_byte_data( client, REG_SOCALERT, 0x80 );
+    if( ret < 0 ) {
+        PR_ERR( "Failed to set profile flag: %d\n", ret );
+        return ret;
+    }
+    msleep( 500 );
+
+    //
+    // Disable IC interrupts
+    //
+    ret = i2c_smbus_write_byte_data( client, REG_GPIOCONFIG, 0x00 );
+    if( ret < 0 ) {
+        PR_ERR( "Failed to configure GPIO: %d\n", ret );
+        return ret;
+    }
+    msleep( 500 );
+
+    //
+    // Restart and wait for the IC to become ready
+    //
+    ret = restart_battery_ic( client );
+    if( ret != 0 ) {
+        PR_ERR( "Battery IC failed to restart after profile update.\n" );
+        return ret;
+    }
+
+    PR_INFO( "Battery profile updated successfully.\n" );
+    return 0;
 }
 
 //
@@ -309,9 +513,6 @@ static void shutdown_helper( void ){
 //
 // This code is called via a kernel thread, and executes approximatly once a second.  This timing can be modified,
 // however it should probably not be faster.
-//
-// Note:  The python code has some additional code that inspects the I2C device and profile.  This code will
-// pobably need to be added here.  The issue is it appears to be quite timing sensitive.
 //
 // Parameters:
 //     args - Not used.
@@ -327,6 +528,7 @@ static int system_monitor( void *args )
     struct i2c_board_info board_info = {I2C_BOARD_INFO("argon40_battery", BATTERY_ADDR )};
     int    soc;
     int    plugged_in;
+    bool   profile_ready        = false;
 
     PR_INFO( "Starting system monitor...\n" );
 
@@ -349,6 +551,18 @@ static int system_monitor( void *args )
             set_current_state( TASK_INTERRUPTIBLE );
             client = i2c_new_client_device( adapter, &board_info );
             PR_INFO( "Client = %p\n",client);
+        }
+        else if( !profile_ready ){
+            //
+            // One-time battery IC profile initialisation.  Must happen before
+            // the first SOC read; without it the CW2217 may report inaccurate
+            // percentages.  If init fails we warn and proceed: the IC may
+            // already have a valid profile from a prior load.
+            //
+            set_current_state( TASK_INTERRUPTIBLE );
+            if( init_battery_profile( client ) < 0 )
+                PR_ERR( "Profile init failed; SOC readings may be inaccurate.\n" );
+            profile_ready = true;
         }
         else{
             set_current_state( TASK_UNINTERRUPTIBLE );
@@ -540,7 +754,7 @@ static int __init oneup_power_init(void)
     int i;
     int ret;
 
-    PR_INFO( "Starting Power monitor version %d.%d...",VERSION_MAJOR,VERSION_MINOR );
+    PR_INFO( "Starting Power monitor version %d.%d.%d",VERSION_MAJOR,VERSION_MINOR,VERSION_EDIT );
     BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_supplies));
     BUILD_BUG_ON(ONEUP_POWER_NUM != ARRAY_SIZE(power_configs));
 
@@ -596,7 +810,9 @@ static void __exit oneup_power_exit(void)
         monitor_task = NULL;
     }
 
-    /* Let's see how we handle changes... */
+    //
+    // Let's see how we handle changes...
+    //
     ac_online = 0;
     battery.status = POWER_SUPPLY_STATUS_DISCHARGING;
 
@@ -625,12 +841,13 @@ static int param_set_soc_shutdown( const char *key, const struct kernel_param *k
             soc_shutdown = 0;
             return 0;
         }
-        else if( (soc > 1) && (soc < 20)){
+        else if( (soc >= 1) && (soc <= 20)){
             PR_INFO( "Changing automatic shutdown when battery is below %ld%%\n",soc);
             soc_shutdown = soc;
             return 0;
         } else {
-            PR_INFO( "Invalid value, 0 to disable, 1 -> 20 to shutdown.\n" );
+            PR_INFO( "Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n",soc );
+            return 0;
         }
     } else {
         PR_INFO( "Could not convert to integer\n" );
