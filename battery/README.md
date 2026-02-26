@@ -2,6 +2,40 @@
 
 A Linux kernel module for the Argon ONE UP laptop's battery controller. It integrates with the kernel's power supply framework, exposing battery state (capacity, status, charge) and AC power state through the standard sysfs interface at `/sys/class/power_supply/`. A background kernel thread monitors the battery and triggers a graceful system shutdown when the charge drops below a configurable threshold while unplugged.
 
+## Device Tree overlay (Pi 5)
+
+The driver can be bound to the hardware through a Device Tree overlay rather
+than relying on manual `modprobe`. A pre-written overlay source is provided at
+`dts/argon-oneup-battery.dts`.
+
+Compile and install it once:
+
+```bash
+dtc -I dts -O dtb -o argon-oneup-battery.dtbo dts/argon-oneup-battery.dts
+sudo cp argon-oneup-battery.dtbo /boot/firmware/overlays/
+```
+
+Then add the following line to `/boot/firmware/config.txt` and reboot:
+
+```
+dtoverlay=argon-oneup-battery
+```
+
+After rebooting the kernel will probe the driver automatically when it
+discovers the `argon40,oneup-battery` node on `i2c1`.
+
+## Kconfig (in-tree build)
+
+When building the driver as part of the kernel source tree, enable it with:
+
+```
+CONFIG_BATTERY_ONEUP=m
+```
+
+The `battery/Kconfig` file contains the full entry. The `Makefile` supports
+both the in-tree `obj-$(CONFIG_BATTERY_ONEUP)` path and the out-of-tree
+`obj-m` path used by DKMS.
+
 ## First-time setup
 
 Run the `firsttime` script once to install the required build tools:
@@ -132,4 +166,4 @@ Watch driver log messages in real time:
 sudo dmesg -w | grep oneUpPower
 ```
 
-The driver logs AC connect/disconnect events, capacity changes, and the shutdown trigger. At load time it prints its version and confirms the monitor thread has started.
+The driver logs AC connect/disconnect events, capacity changes, and the shutdown trigger. At load time it prints its version and confirms the probe succeeded.

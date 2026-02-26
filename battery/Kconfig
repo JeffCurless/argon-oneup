@@ -1,0 +1,9 @@
+config BATTERY_ONEUP
+	tristate "Argon ONE UP battery driver"
+	depends on I2C
+	help
+	  Say Y here to enable support for the battery controller in the
+	  Argon ONE UP laptop (Raspberry Pi 5 based).
+
+	  This driver can also be built as a module. If so, the module will
+	  be called oneUpPower.
