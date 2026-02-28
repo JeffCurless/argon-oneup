@@ -1,10 +1,34 @@
 #!/bin/bash
+
+# Copy the module into the kernel module tree and register it.
 sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+
 if ! grep -qF "oneUpPower" /etc/modules
 then
     sudo sh -c 'echo "oneUpPower" >> /etc/modules'
 fi
+
 sudo sh -c 'echo "options oneUpPower soc_shutdown=5" > /etc/modprobe.d/oneUpPower.conf'
 sudo depmod -a
-sudo insmod oneUpPower.ko
+
+# Use modprobe (not insmod) so the soc_shutdown option in
+# /etc/modprobe.d/oneUpPower.conf is applied at load time.
+sudo modprobe oneUpPower
+
+# The i2c_driver model requires an explicit device instantiation to trigger
+# probe().  Write to new_device unless the device is already present — e.g.
+# if the DT overlay (dts/argon-oneup-battery.dts) has been compiled, copied
+# to /boot/firmware/overlays/, and activated via config.txt, the kernel
+# already knows about the device and this step is not needed.
+if [ ! -e /sys/bus/i2c/devices/1-0064 ]; then
+    echo "Instantiating I2C device to trigger probe()..."
+    echo "oneup-battery 0x64" | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
+else
+    echo "Device 1-0064 already present (DT overlay active); skipping new_device."
+fi
+
+# Install the systemd service that re-instantiates the device on every boot
+# after the module is loaded from /etc/modules.  The service is a no-op when
+# the DT overlay is active (it checks for 1-0064 before writing new_device).
+sudo cp -f oneUpPower.service /etc/systemd/system/
 sync
