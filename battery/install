@@ -15,6 +15,22 @@ sudo depmod -a
 # /etc/modprobe.d/oneUpPower.conf is applied at load time.
 sudo modprobe oneUpPower
 
+# Install the device tree overlay so the kernel binds the driver automatically
+# on every boot without requiring the systemd service to write to new_device.
+if [ -f argon-oneup-battery.dtbo ]; then
+    sudo cp -vf argon-oneup-battery.dtbo /boot/firmware/overlays/
+    if ! grep -qF "dtoverlay=argon-oneup-battery" /boot/firmware/config.txt; then
+        sudo sh -c 'echo "dtoverlay=argon-oneup-battery" >> /boot/firmware/config.txt'
+        echo "Added dtoverlay=argon-oneup-battery to /boot/firmware/config.txt"
+        echo "Note: the overlay takes effect after the next reboot."
+    else
+        echo "dtoverlay=argon-oneup-battery already present in /boot/firmware/config.txt"
+    fi
+else
+    echo "Warning: argon-oneup-battery.dtbo not found; skipping overlay install."
+    echo "Run ./build first to compile the overlay, or install it manually."
+fi
+
 # The i2c_driver model requires an explicit device instantiation to trigger
 # probe().  Write to new_device unless the device is already present — e.g.
 # if the DT overlay (dts/argon-oneup-battery.dts) has been compiled, copied
