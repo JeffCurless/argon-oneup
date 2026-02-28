@@ -4,28 +4,14 @@ A Linux kernel module for the Argon ONE UP laptop's battery controller. It
 communicates with the CW2217 fuel gauge IC over I2C and integrates with the
 kernel's power supply framework, exposing battery state (capacity, status,
 charge) and AC power state through the standard sysfs interface at
-`/sys/class/power_supply/`. A background work queue polls the hardware once
-per second and triggers a graceful system shutdown when the charge drops below
-a configurable threshold while unplugged.
+`/sys/class/power_supply/`. A work queue polls the hardware once per second
+and triggers a graceful system shutdown when the charge drops below a
+configurable threshold while unplugged.
 
----
-
-## How probe() is triggered
-
-The driver follows the standard Linux I2C driver model: loading the module
-only *registers* it with the I2C subsystem. The driver's `probe()` function —
-which initialises the battery IC, registers `BAT0` and `AC0`, and starts the
-polling work — is not called until the kernel is told a device exists at
-I2C address `0x64` on bus 1. There are two ways to do this:
-
-| Method | How it works | When to use |
-|--------|-------------|-------------|
-| **`./install` + service** | `./install` writes `oneup-battery 0x64` to the I2C `new_device` sysfs interface, which triggers `probe()` immediately. `oneUpPower.service` repeats this write on every subsequent boot. | Development, DKMS, or any setup where a reboot to apply an overlay is inconvenient |
-| **DT overlay** | The compiled overlay is placed in `/boot/firmware/overlays/` and referenced in `config.txt`. The firmware merges it into the Device Tree before boot, and the kernel calls `probe()` automatically. The service is not needed. | Long-term installation; upstream-preferred approach |
-
-Both methods are described below. They are mutually exclusive in normal use —
-the service skips the `new_device` write if the device is already present via
-the overlay.
+The driver uses the standard Linux I2C driver model. The kernel binds it to
+the hardware automatically at boot through a Device Tree overlay that declares
+the battery IC on `i2c1` at address `0x64`. The `./build` script compiles the
+overlay and `./install` deploys it; a reboot is required to activate it.
 
 ---
 
@@ -45,6 +31,12 @@ It detects the running OS and installs the appropriate packages:
 | Ubuntu | `build-essential`, `linux-headers-generic`, `dkms` |
 | Alpine | `build-base`, `linux-dev` |
 
+`device-tree-compiler` is also required to compile the overlay:
+
+```bash
+sudo apt install device-tree-compiler
+```
+
 ---
 
 ## Build
@@ -53,31 +45,39 @@ It detects the running OS and installs the appropriate packages:
 ./build
 ```
 
-Compiles `oneUpPower.ko` against the headers for the currently running kernel.
-The resulting module must be built on the target Pi — cross-compiled binaries
-will have a `vermagic` mismatch and will be refused by the kernel.
+Compiles two artifacts in the `battery/` directory:
+
+| File | Description |
+|------|-------------|
+| `oneUpPower.ko` | Kernel module, built against the running kernel's headers |
+| `argon-oneup-battery.dtbo` | Device Tree overlay binary, compiled from `dts/argon-oneup-battery.dts` |
+
+The module must be built on the target Pi — cross-compiled binaries will have
+a `vermagic` mismatch and will be refused by the kernel.
 
 ---
 
-## Install and load
+## Install
 
 ```bash
-./install
+sudo ./install
 ```
 
-Installs and starts the driver using the `modprobe` + service path. Specifically:
+Installs the module and overlay, then updates the firmware configuration.
+Specifically:
 
 1. Copies `oneUpPower.ko` to `/lib/modules/$(uname -r)/kernel/drivers/power/supply/`
-2. Adds `oneUpPower` to `/etc/modules` so it loads automatically on boot
+2. Adds `oneUpPower` to `/etc/modules` so the module loads automatically on boot
 3. Writes the default configuration to `/etc/modprobe.d/oneUpPower.conf`
 4. Runs `depmod -a` to update the module dependency database
-5. Loads the module with `modprobe` (reads `soc_shutdown` from the conf file)
-6. Writes `oneup-battery 0x64` to `/sys/bus/i2c/devices/i2c-1/new_device`,
-   which tells the I2C subsystem a device exists at that address and triggers
-   `probe()` immediately (skipped if the DT overlay is already active and the
-   device is already present)
-7. Installs and enables `oneUpPower.service` so the device is re-instantiated on
-   every subsequent boot after the module is loaded from `/etc/modules`
+5. Loads the module immediately with `modprobe`
+6. Copies `argon-oneup-battery.dtbo` to `/boot/firmware/overlays/`
+7. Appends `dtoverlay=argon-oneup-battery` to `/boot/firmware/config.txt`
+   (skipped if the line is already present)
+
+**A reboot is required** for the firmware to merge the overlay into the Device
+Tree. After rebooting the kernel will call `probe()` automatically and `BAT0`
+and `AC0` will appear in `/sys/class/power_supply/`.
 
 Expected kernel log after `probe()` completes:
 
@@ -98,60 +98,19 @@ sudo dmesg -w | grep oneUpPower
 ## Remove
 
 ```bash
-./remove
+sudo ./remove
 ```
 
 Fully uninstalls the driver. Specifically:
 
-1. Disables and stops `oneUpPower.service`
-2. Removes `/etc/systemd/system/oneUpPower.service`
-3. Writes `0x64` to `/sys/bus/i2c/devices/i2c-1/delete_device` to release the
-   I2C device cleanly before unloading (skipped if the device is not present)
-4. Unloads the module with `rmmod`
-5. Removes the `.ko` from `/lib/modules/`
-6. Removes the `oneUpPower` entry from `/etc/modules`
-7. Removes `/etc/modprobe.d/oneUpPower.conf`
+1. Unloads the module with `rmmod`
+2. Removes the `.ko` from `/lib/modules/`
+3. Removes the `oneUpPower` entry from `/etc/modules`
+4. Removes `/etc/modprobe.d/oneUpPower.conf`
+5. Removes `argon-oneup-battery.dtbo` from `/boot/firmware/overlays/`
+6. Removes the `dtoverlay=argon-oneup-battery` line from `/boot/firmware/config.txt`
 
-> **Note:** If the DT overlay was installed separately, `./remove` does not
-> touch it. To fully remove the DT overlay path, delete
-> `/boot/firmware/overlays/argon-oneup-battery.dtbo`, remove the
-> `dtoverlay=argon-oneup-battery` line from `/boot/firmware/config.txt`, and
-> reboot.
-
----
-
-## DT overlay (alternative install path)
-
-The DT overlay is the upstream-preferred binding method. It replaces the
-`new_device` sysfs write and the systemd service — the kernel binds the driver
-automatically at boot without any userspace assistance.
-
-The overlay source is at `dts/argon-oneup-battery.dts`. It declares a node on
-`i2c1` at address `0x64` with `compatible = "argon40,oneup-battery"`, which
-matches the driver's `of_device_id` table.
-
-### Compile and install (run on the Pi)
-
-```bash
-dtc -I dts -O dtb -o argon-oneup-battery.dtbo dts/argon-oneup-battery.dts
-sudo cp argon-oneup-battery.dtbo /boot/firmware/overlays/
-```
-
-Add to `/boot/firmware/config.txt`:
-
-```
-dtoverlay=argon-oneup-battery
-```
-
-Reboot. `probe()` will be called automatically during driver initialisation.
-
-### Relationship to `./install` and `oneUpPower.service`
-
-When the DT overlay is active, `./install` can still be used to copy the
-module and set up `/etc/modules` and `/etc/modprobe.d/oneUpPower.conf`. The
-`new_device` write in step 6 is skipped automatically because the device is
-already present. `oneUpPower.service` is still installed but its `ExecStart`
-is also a no-op in this case, so there is no conflict.
+**A reboot is required** for the firmware to stop applying the overlay.
 
 ---
 
@@ -162,9 +121,8 @@ is also a no-op in this case, so there is no conflict.
 ```
 
 Installs the driver into DKMS at `/usr/src/oneUpPower-1.0/`. With DKMS the
-module is automatically rebuilt whenever the kernel is updated. Use this for
-long-term installations that receive kernel updates. Device binding (via the
-service or DT overlay) is still required separately.
+module is automatically rebuilt whenever the kernel is updated. The Device
+Tree overlay does not need to be reinstalled after a kernel update.
 
 ---
 
