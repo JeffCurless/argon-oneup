@@ -16,7 +16,7 @@ sudo depmod -a
 sudo modprobe oneUpPower
 
 # Install the device tree overlay so the kernel binds the driver automatically
-# on every boot without requiring the systemd service to write to new_device.
+# on every boot.
 if [ -f argon-oneup-battery.dtbo ]; then
     sudo cp -vf argon-oneup-battery.dtbo /boot/firmware/overlays/
     if ! grep -qF "dtoverlay=argon-oneup-battery" /boot/firmware/config.txt; then
@@ -43,8 +43,4 @@ else
     echo "Device 1-0064 already present (DT overlay active); skipping new_device."
 fi
 
-# Install the systemd service that re-instantiates the device on every boot
-# after the module is loaded from /etc/modules.  The service is a no-op when
-# the DT overlay is active (it checks for 1-0064 before writing new_device).
-sudo cp -f oneUpPower.service /etc/systemd/system/
 sync
