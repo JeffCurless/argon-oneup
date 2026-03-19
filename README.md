@@ -23,6 +23,14 @@ See [monitor/README.md](monitor/README.md) for requirements, configuration, and 
 
 ---
 
+### [`ksystemstats/`](ksystemstats/README.md) — KDE system monitor fix
+
+A fix for the KDE CPU monitor hanging on Raspberry Pi (KDE bug #493093). Patches the view of `/proc/cpuinfo` seen by `ksystemstats` so the CPU plugin works correctly on ARM, without affecting the rest of the system.
+
+See [ksystemstats/README.md](ksystemstats/README.md) for installation.
+
+---
+
 ### [`config/`](config/) — Boot configuration snippets
 
 Additions to `/boot/firmware/config.txt` for fan curve tuning and CPU overclocking. Apply manually or review `config/update.sh` for reference.
