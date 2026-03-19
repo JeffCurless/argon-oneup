@@ -19,6 +19,8 @@ See [battery/README.md](battery/README.md) for build instructions, installation,
 
 A graphical system resource monitor (`oneUpMon.py`) built with PyQt6. Displays live rolling charts for CPU utilization, disk I/O, network I/O, temperatures, and fan speed, updated once per second.
 
+Also includes `argon-oneup-sensors.conf`, an `lm-sensors` chip-label configuration for this hardware (install to `/etc/sensors.d/`).
+
 See [monitor/README.md](monitor/README.md) for requirements, configuration, and a description of the charts and data sources.
 
 ---
