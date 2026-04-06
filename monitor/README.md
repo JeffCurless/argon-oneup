@@ -139,3 +139,24 @@ Some drives require extra arguments to `smartctl` to be read correctly (e.g., dr
 | `<device>` | *(none)* | The key is the device name (e.g., `sda`). The value is inserted before `-a /dev/<device>` in the smartctl command when reading that drive's temperature. |
 
 Without a `[smartctl]` entry for a drive, the command used is `smartctl -A /dev/<device>`.
+
+---
+
+## lm-sensors labels (`argon-oneup-sensors.conf`)
+
+A chip-label configuration for `lm-sensors` is provided at `monitor/argon-oneup-sensors.conf`. Install it to apply human-readable labels to the hardware sensors visible via `sensors(1)`:
+
+```bash
+sudo cp argon-oneup-sensors.conf /etc/sensors.d/argon-oneup.conf
+```
+
+| Chip | Labels applied |
+|------|----------------|
+| `cpu_thermal` | CPU temperature |
+| `rp1_adc` | RP1 die temperature; 1.8 V, 3.3 V, 1.5 V rail voltages |
+| `pwmfan` | CPU Fan RPM (PWM control outputs hidden) |
+| `nvme` | NVMe composite temperature (die-sensor sentinel values hidden) |
+| `BAT0` | Battery voltage and temperature (requires the `oneUpPower` module from `battery/`) |
+| `rpi_volt` | BCM2712 PMIC under-voltage flag suppressed (no readable voltage register) |
+
+> **Note:** `oneUpMon.py` reads temperatures independently via `gpiozero` and `smartctl` — this file is for the `sensors` command-line tool and any other application that uses `libsensors`.
