@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+systemctl --user stop plasma-ksystemstats 2>/dev/null || true
+
+rm -f "$HOME/.config/systemd/user/plasma-ksystemstats.service.d/cpuinfo_fix.conf"
+rmdir --ignore-fail-on-non-empty \
+    "$HOME/.config/systemd/user/plasma-ksystemstats.service.d" 2>/dev/null || true
+sudo rm -f /usr/local/bin/ksystemstats-cpuinfo-gen
+sudo rm -f /usr/local/bin/ksystemstats-ns-helper
+
+systemctl --user daemon-reload
+echo "Removed."

@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# ksystemstats-wrapper — generate an ARM-compatible /proc/cpuinfo for ksystemstats
+#
+# ksystemstats_plugin_cpu.so reads /proc/cpuinfo expecting x86 format: a
+# "cpu MHz" field inside each processor block. On ARM this field is absent,
+# and trailing Pi-specific fields (Revision/Serial/Model) cause the inner loop
+# to spin forever at EOF (KDE bug #493093).
+#
+# This script writes a corrected cpuinfo — cpu MHz injected into each block,
+# trailing non-CPU fields stripped — to the path given as $1.
+# The systemd drop-in (cpuinfo_fix.conf) uses ExecStartPre= to call this
+# script, then PrivateMounts=yes + BindPaths= to shadow /proc/cpuinfo with
+# the generated file before launching /usr/bin/ksystemstats.
+
+OUTPUT="${1:?output path required}"
+
+declare -a FREQS
+i=0
+for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
+    read -r FREQS[$i] < "$f"
+    i=$((i + 1))
+done
+
+{
+    while IFS= read -r line; do
+        [[ "$line" =~ ^(Revision|Serial|Model) ]] && continue
+        printf '%s\n' "$line"
+        if [[ "$line" =~ ^processor[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+            cpu="${BASH_REMATCH[1]}"
+            freq="${FREQS[$cpu]:-2400000}"
+            printf "cpu MHz\t\t: %d.%03d\n" $((freq / 1000)) $((freq % 1000))
+        fi
+    done < /proc/cpuinfo
+} > "$OUTPUT"
