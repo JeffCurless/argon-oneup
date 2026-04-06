@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+
+HELPER=/usr/local/bin/ksystemstats-ns-helper
+GENERATOR=/usr/local/bin/ksystemstats-cpuinfo-gen
+DROP_IN_DIR="$HOME/.config/systemd/user/plasma-ksystemstats.service.d"
+DROP_IN="$DROP_IN_DIR/cpuinfo_fix.conf"
+
+gcc -O2 -o ksystemstats-ns-helper ksystemstats-ns-helper.c
+
+sudo install -Dm755 ksystemstats-ns-helper "$HELPER"
+sudo install -Dm755 ksystemstats-cpuinfo-gen "$GENERATOR"
+sudo setcap 'cap_sys_admin=ep' "$HELPER"
+
+mkdir -p "$DROP_IN_DIR"
+cat > "$DROP_IN" <<EOF
+[Service]
+RuntimeDirectory=ksystemstats-cpufix
+ExecStartPre=$GENERATOR %t/ksystemstats-cpufix/cpuinfo
+ExecStart=
+ExecStart=$HELPER %t/ksystemstats-cpufix/cpuinfo
+EOF
+
+systemctl --user daemon-reload
+systemctl --user restart plasma-ksystemstats
+echo "Installed and started."
