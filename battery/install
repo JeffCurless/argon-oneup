@@ -1,10 +1,17 @@
-#!/bin/bash
-sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
-if ! grep -qF "oneUpPower" /etc/modules
-then
-    sudo sh -c 'echo "oneUpPower" >> /etc/modules'
-fi
-sudo sh -c 'echo "options oneUpPower soc_shutdown=5" > /etc/modprobe.d/oneUpPower.conf'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+# shellcheck disable=SC1091
+source ./lib.sh
+
+MODULE_DEST="$(module_install_path)"
+
+sudo install -Dm644 oneUpPower.ko "$MODULE_DEST"
+install_module_autoload
+write_modprobe_config
 sudo depmod -a
-sudo insmod oneUpPower.ko
+sudo modprobe oneUpPower
 sync

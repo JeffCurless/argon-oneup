@@ -1,7 +1,10 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 #HEADERS=6.12.47+rpt-rpi-v8
 HEADERS=$(uname -r)
-make -C /lib/modules/$HEADERS/build M=$PWD clean
-make -C /lib/modules/$HEADERS/build M=$PWD modules
-
+KDIR="$(bash ./kdir.sh "$HEADERS")"
+CC_VERSION_TEXT="$(gcc --version | head -n 1)"
+make -C "$KDIR" M="$PWD" "CONFIG_CC_VERSION_TEXT=$CC_VERSION_TEXT" clean
+make -C "$KDIR" M="$PWD" "CONFIG_CC_VERSION_TEXT=$CC_VERSION_TEXT" modules

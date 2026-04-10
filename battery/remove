@@ -1,8 +1,16 @@
-#!/bin/bash
-sudo dkms remove -m oneUpPower -v 1.0
-sudo rmmod oneUpPower
-sudo rm -vf /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
-sudo sh -c "sed -i '/oneUpPower/d' /etc/modules"
-sudo rm -vf /etc/modprobe.d/oneUpPower.conf
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+# shellcheck disable=SC1091
+source ./lib.sh
+
+sudo dkms remove -m oneUpPower -v 1.0 || true
+sudo modprobe -r oneUpPower 2>/dev/null || sudo rmmod oneUpPower 2>/dev/null || true
+sudo rm -vf "$(module_install_path)"
+remove_module_autoload
+sudo rm -vf "$ONEUP_MODPROBE_CONF"
 sudo depmod -a
 sync

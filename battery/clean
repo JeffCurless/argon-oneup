@@ -1,5 +1,8 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 HEADERS=$(uname -r)
-make -C /lib/modules/$HEADERS/build M=$PWD clean
-
+KDIR="$(bash ./kdir.sh "$HEADERS")"
+CC_VERSION_TEXT="$(gcc --version | head -n 1)"
+make -C "$KDIR" M="$PWD" "CONFIG_CC_VERSION_TEXT=$CC_VERSION_TEXT" clean

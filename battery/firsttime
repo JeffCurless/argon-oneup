@@ -1,4 +1,6 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 #
 # Get the OS we are running on
@@ -6,48 +8,70 @@
 
 PLATFORM="unknown"
 PLATFORMVERSION=""
-PAKMAN="sudo apt install -y"
+OSNAME="unknown"
+PACKAGE_MANAGER=()
+PACKAGES=()
 
-if [ -f "/etc/os-release" ]
-then
+if [ -f "/etc/os-release" ]; then
     source /etc/os-release
     PLATFORM=$ID
     PLATFORMVERSION=$VERSION_ID
     OSNAME=$PRETTY_NAME
-    echo ${PLATFORMVERSION} | grep -e "\." > /dev/null
-    if [ $? -eq 0 ]
-    then
-	PLATFORMVERSIONNUM=`cut -d "." -f2 <<< $PLATFORMVERSION `
-	PLATFORMVERSION=`cut -d "." -f1 <<< $PLATFORMVERSION `
+    if echo "${PLATFORMVERSION}" | grep -q '\.'; then
+        PLATFORMVERSIONNUM=$(cut -d "." -f2 <<< "$PLATFORMVERSION")
+        PLATFORMVERSION=$(cut -d "." -f1 <<< "$PLATFORMVERSION")
     fi
 fi
 
 case $PLATFORM in
     raspbian | debian)
-      echo "Installing for $OSNAME"
-      MODULES=(build-essential linux-headers-rpi-v8 dkms)
-      ;;
+        echo "Installing for $OSNAME"
+        PACKAGE_MANAGER=(sudo apt install -y)
+        PACKAGES=(build-essential linux-headers-rpi-v8 dkms)
+        ;;
 
     alpine)
-      echo "Installing for $OSNAME"
-      MODULES=(build-base linux-dev)
-      PAKMAN="sudo apk add -y"
-      ;;
+        echo "Installing for $OSNAME"
+        PACKAGE_MANAGER=(sudo apk add)
+        PACKAGES=(build-base linux-dev)
+        ;;
 
     ubuntu)
-      echo "Installing for $OSNAME"
-      MODULES=(build-essential linux-headers-generic dkms)
-      ;;
+        echo "Installing for $OSNAME"
+        PACKAGE_MANAGER=(sudo apt install -y)
+        PACKAGES=(build-essential linux-headers-generic dkms)
+        ;;
+
+    fedora | rhel | centos | rocky | almalinux)
+        echo "Installing for $OSNAME"
+        KERNEL_RELEASE="$(uname -r)"
+        if command -v dnf >/dev/null 2>&1; then
+            PACKAGE_MANAGER=(sudo dnf install -y)
+        elif command -v yum >/dev/null 2>&1; then
+            PACKAGE_MANAGER=(sudo yum install -y)
+        else
+            echo "No supported package manager found for $OSNAME"
+            exit 1
+        fi
+        PACKAGES=(gcc make dkms)
+        if [[ "$KERNEL_RELEASE" == *".rpi5."* ]]; then
+            PACKAGES+=("kernel-rpi5-devel-${KERNEL_RELEASE}")
+        elif [[ "$KERNEL_RELEASE" == *".rpi4."* ]]; then
+            PACKAGES+=("kernel-rpi4-devel-${KERNEL_RELEASE}")
+        else
+            PACKAGES+=("kernel-devel-${KERNEL_RELEASE}")
+        fi
+        ;;
 
     *)
-      echo "Installing on unknown platform: $OSNAME"
-      echo "Please report the following:"
-      cat /etc/os-release
-      exit
-      ;;
+        echo "Installing on unknown platform: $OSNAME"
+        echo "Please report the following:"
+        cat /etc/os-release
+        exit 1
+        ;;
 esac
 
-for package in ${MODULES[@]}; do
+for package in "${PACKAGES[@]}"; do
     echo "Installing $package"
-    $PAKMAN -y $package
+    "${PACKAGE_MANAGER[@]}" "$package"
 done

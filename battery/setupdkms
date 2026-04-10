@@ -1,4 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
 
 DKMS_DEST=/usr/src/oneUpPower-1.0
 DKMS_SRC=$DKMS_DEST/src
@@ -8,7 +12,9 @@ DKMS_SRC=$DKMS_DEST/src
 sudo mkdir -p $DKMS_SRC
 sudo cp ./dkms/dkms.conf $DKMS_DEST/dkms.conf
 sudo cp ./dkms/postinstall $DKMS_DEST/postinstall
+sudo cp ./lib.sh $DKMS_DEST/lib.sh
 sudo cp ./dkms/Makefile $DKMS_SRC/Makefile
+sudo cp ./kdir.sh $DKMS_SRC/kdir.sh
 sudo cp oneUpPower.c $DKMS_SRC/oneUpPower.c
 
 sudo dkms add -m oneUpPower -v 1.0
