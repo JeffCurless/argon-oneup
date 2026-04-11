@@ -197,6 +197,10 @@ static void check_ac_power(struct oneup_battery *bat)
 	int plugged_in;
 
 	current_high = i2c_smbus_read_byte_data(bat->client, CURRENT_HIGH_REG);
+	if (current_high < 0) {
+		PR_ERR("Failed to read current register: %d\n", current_high);
+		return;
+	}
 
 	plugged_in = ((current_high & 0x80) == 0x80) ? 0 : 1;
 
@@ -219,10 +223,12 @@ static void check_battery_state(struct oneup_battery *bat)
 	int soc;
 
 	soc = i2c_smbus_read_byte_data(bat->client, SOC_HIGH_REG);
+	if (soc < 0) {
+		PR_ERR("Failed to read SOC register: %d\n", soc);
+		return;
+	}
 	if (soc > 100)
 		soc = 100;
-	if (soc < 0)
-		soc = 0;
 
 	if (bat->soc != soc) {
 		bat->soc = soc;
