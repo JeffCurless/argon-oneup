@@ -201,10 +201,10 @@ Capacity level thresholds:
 | `capacity` | `capacity_level` |
 |------------|------------------|
 | > 95% | `Full` |
-| > 85% | `High` |
-| > 75% | `Normal` |
-| > 40% | `Low` |
-| ≤ 40% | `Critical` |
+| > 75% | `High` |
+| > 25% | `Normal` |
+| > 10% | `Low` |
+| ≤ 10% | `Critical` |
 
 ### `AC0` — AC power
 
