@@ -39,7 +39,7 @@ case $PLATFORM in
     ubuntu)
         echo "Installing for $OSNAME"
         PACKAGE_MANAGER=(sudo apt install -y)
-        PACKAGES=(build-essential linux-headers-generic dkms)
+	PACKAGES=(build-essential linux-headers-$(uname -r) dkms)
         ;;
 
     fedora | rhel | centos | rocky | almalinux)
