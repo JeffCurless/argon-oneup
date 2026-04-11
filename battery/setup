@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# setup — one-shot driver setup for oneUpPower
+#
+# Usage:
+#   sudo ./setup          Full setup: install deps, build, register DKMS,
+#                         install overlay, configure autoload, load module.
+#   sudo ./setup clean    Remove build artefacts (module and overlay objects).
+#
+# This script replaces firsttime, build, install, and setupdkms.
+# The module is managed by DKMS so it is rebuilt automatically on kernel updates.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+DKMS_VERSION=1.0
+DKMS_DEST=/usr/src/oneUpPower-${DKMS_VERSION}
+DKMS_SRC=${DKMS_DEST}/src
+
+# ── helpers ─────────────────────────────────────────────────────────────────
+
+banner() { echo; echo "=== $* ==="; }
+
+# ── 1. Install build dependencies ───────────────────────────────────────────
+
+install_deps() {
+    banner "Installing build dependencies"
+
+    local platform="" osname="" pkg_manager=() packages=()
+
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/os-release
+        platform="${ID:-unknown}"
+        osname="${PRETTY_NAME:-$platform}"
+    fi
+
+    echo "Detected OS: ${osname:-unknown}"
+
+    case "$platform" in
+        raspbian|debian)
+            pkg_manager=(apt-get install -y)
+            packages=(build-essential linux-headers-rpi-v8 dkms device-tree-compiler)
+            ;;
+        ubuntu)
+            pkg_manager=(apt-get install -y)
+            packages=(build-essential "linux-headers-$(uname -r)" dkms device-tree-compiler)
+            ;;
+        fedora|rhel|centos|rocky|almalinux)
+            local kr
+            kr="$(uname -r)"
+            if command -v dnf >/dev/null 2>&1; then
+                pkg_manager=(dnf install -y)
+            elif command -v yum >/dev/null 2>&1; then
+                pkg_manager=(yum install -y)
+            else
+                echo "ERROR: no supported package manager found." >&2
+                exit 1
+            fi
+            packages=(gcc make dkms dtc)
+            if [[ "$kr" == *".rpi5."* ]]; then
+                packages+=("kernel-rpi5-devel-${kr}")
+            elif [[ "$kr" == *".rpi4."* ]]; then
+                packages+=("kernel-rpi4-devel-${kr}")
+            else
+                packages+=("kernel-devel-${kr}")
+            fi
+            ;;
+        alpine)
+            pkg_manager=(apk add)
+            packages=(build-base linux-dev dtc)
+            ;;
+        *)
+            echo "ERROR: unsupported OS '${platform}'. Please report:" >&2
+            cat /etc/os-release >&2
+            exit 1
+            ;;
+    esac
+
+    echo "Installing: ${packages[*]}"
+    "${pkg_manager[@]}" "${packages[@]}"
+}
+
+# ── 2. Build kernel module and Device Tree overlay ───────────────────────────
+
+build_module() {
+    banner "Building oneUpPower kernel module"
+
+    local kr
+    kr="$(uname -r)"
+    local kdir
+    kdir="$(bash "$SCRIPT_DIR/kdir.sh" "$kr")"
+    local ccver
+    ccver="$(gcc --version | head -n 1)"
+
+    echo "Kernel: $kr"
+    echo "Build tree: $kdir"
+
+    make -C "$kdir" M="$SCRIPT_DIR" "CONFIG_CC_VERSION_TEXT=${ccver}" clean
+    make -C "$kdir" M="$SCRIPT_DIR" "CONFIG_CC_VERSION_TEXT=${ccver}" modules
+    echo "oneUpPower.ko built successfully."
+
+    if command -v dtc >/dev/null 2>&1; then
+        echo "Building device tree overlay..."
+        dtc -I dts -O dtb \
+            -o "$SCRIPT_DIR/argon-oneup-battery.dtbo" \
+            "$SCRIPT_DIR/dts/argon-oneup-battery.dts" \
+            && echo "argon-oneup-battery.dtbo built successfully." \
+            || echo "WARNING: dtc failed; overlay was not built."
+    else
+        echo "WARNING: dtc not found — skipping overlay build."
+        echo "  Install device-tree-compiler and run setup again."
+    fi
+}
+
+# ── 3. Register and install with DKMS ───────────────────────────────────────
+
+setup_dkms() {
+    banner "Setting up DKMS"
+
+    # Idempotent: remove any prior registration so we always start clean.
+    if dkms status -m oneUpPower -v "$DKMS_VERSION" 2>/dev/null | grep -q oneUpPower; then
+        echo "Removing existing DKMS registration for oneUpPower/${DKMS_VERSION}..."
+        dkms remove -m oneUpPower -v "$DKMS_VERSION" --all
+    fi
+
+    echo "Populating DKMS source tree at ${DKMS_DEST}..."
+    mkdir -p "$DKMS_SRC"
+
+    cp "$SCRIPT_DIR/dkms/dkms.conf"   "$DKMS_DEST/dkms.conf"
+    cp "$SCRIPT_DIR/dkms/postinstall" "$DKMS_DEST/postinstall"
+    chmod +x                           "$DKMS_DEST/postinstall"
+    cp "$SCRIPT_DIR/lib.sh"            "$DKMS_DEST/lib.sh"
+    cp "$SCRIPT_DIR/dkms/Makefile"    "$DKMS_SRC/Makefile"
+    cp "$SCRIPT_DIR/kdir.sh"          "$DKMS_SRC/kdir.sh"
+    cp "$SCRIPT_DIR/oneUpPower.c"     "$DKMS_SRC/oneUpPower.c"
+
+    echo "Registering, building, and installing via DKMS..."
+    dkms add     -m oneUpPower -v "$DKMS_VERSION"
+    dkms build   -m oneUpPower -v "$DKMS_VERSION"
+    dkms install -m oneUpPower -v "$DKMS_VERSION"
+    echo "DKMS install complete."
+}
+
+# ── 4. Install overlay, configure autoload, and load module ─────────────────
+
+finalize_install() {
+    banner "Finalizing installation"
+
+    install_module_autoload
+    write_modprobe_config
+    install_overlay "$SCRIPT_DIR/argon-oneup-battery.dtbo"
+
+    # Load the module immediately (DKMS install already placed the .ko).
+    if ! lsmod | grep -q "^oneUpPower[[:space:]]"; then
+        echo "Loading oneUpPower module..."
+        modprobe oneUpPower
+    else
+        echo "oneUpPower is already loaded."
+    fi
+
+    # Trigger probe() via the I2C bus if the DT overlay is not yet active.
+    # Once the overlay is merged at boot, 1-0064 appears automatically and
+    # this step is no longer needed.
+    if [[ ! -e /sys/bus/i2c/devices/1-0064 ]]; then
+        echo "Instantiating I2C device to trigger probe()..."
+        echo "oneup-battery 0x64" | tee /sys/bus/i2c/devices/i2c-1/new_device
+    else
+        echo "I2C device 1-0064 already present (DT overlay active)."
+    fi
+
+    sync
+}
+
+# ── clean sub-command ────────────────────────────────────────────────────────
+
+do_clean() {
+    banner "Cleaning build artefacts"
+    local kr
+    kr="$(uname -r)"
+    local kdir
+    kdir="$(bash "$SCRIPT_DIR/kdir.sh" "$kr")"
+    local ccver
+    ccver="$(gcc --version | head -n 1)"
+
+    make -C "$kdir" M="$SCRIPT_DIR" "CONFIG_CC_VERSION_TEXT=${ccver}" clean
+    rm -f "$SCRIPT_DIR/argon-oneup-battery.dtbo"
+    echo "Clean complete."
+}
+
+# ── root check ───────────────────────────────────────────────────────────────
+
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    echo "ERROR: this script must be run as root (sudo ./setup)." >&2
+    exit 1
+fi
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+    clean)
+        do_clean
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "Usage: sudo ./setup [clean]" >&2
+        exit 1
+        ;;
+esac
+
+# ── Full setup ───────────────────────────────────────────────────────────────
+
+banner "oneUpPower driver setup"
+
+install_deps
+build_module
+setup_dkms
+finalize_install
+
+banner "Setup complete"
+echo "Reboot to activate the Device Tree overlay."
+echo "After reboot, BAT0 and AC0 will appear in /sys/class/power_supply/."
+echo ""
+echo "Watch driver messages with:"
+echo "  sudo dmesg -w | grep oneUpPower"

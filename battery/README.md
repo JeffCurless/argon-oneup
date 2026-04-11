@@ -10,80 +10,78 @@ configurable threshold while unplugged.
 
 The driver uses the standard Linux I2C driver model. The kernel binds it to
 the hardware automatically at boot through a Device Tree overlay that declares
-the battery IC on `i2c1` at address `0x64`. The `./build` script compiles the
-overlay and `./install` deploys it; a reboot is required to activate it.
+the battery IC on `i2c1` at address `0x64`. Run `sudo setup` to compile
+everything and deploy it; a reboot is required to activate the overlay.
+
+> [!IMPORTANT]
+> If you have an older version of the driver installed, run `sudo ./remove`
+> before running `sudo setup`.
 
 ---
 
-## First-time setup
+## Setup
 
-Run the `firsttime` script once to install the required build tools:
-
-```bash
-./firsttime
-```
-
-It detects the running OS and installs the appropriate packages:
-
-| OS | Packages installed |
-|----|--------------------|
-| Raspberry Pi OS / Debian | `build-essential`, `linux-headers-rpi-v8`, `dkms` |
-| Ubuntu | `build-essential`, `linux-headers-generic`, `dkms` |
-| Fedora / RHEL family | `gcc`, `make`, Fedora-matching kernel devel package, `dkms` |
-| Alpine | `build-base`, `linux-dev` |
-
-On Fedora Raspberry Pi systems, install the platform-specific devel package that matches the running kernel, for example `kernel-rpi5-devel-$(uname -r)` on Raspberry Pi 5. The helper scripts prefer the exact kernel build tree and only fall back to alternate naming when the system packaging is incomplete.
-
-On Fedora you have to add 'dtparam=i2c_arm=on' to /boot/config.txt for battery charge state and charge level to be displayed properly.
-`device-tree-compiler` is also required to compile the overlay:
+Run the unified setup script once as root. It installs build dependencies,
+compiles the module and Device Tree overlay, registers the driver with DKMS,
+and loads the module immediately:
 
 ```bash
-sudo apt install device-tree-compiler
+sudo setup
 ```
 
----
+The script is safe to re-run — DKMS registration is torn down and rebuilt
+cleanly each time, and idempotency guards prevent duplicate entries in
+`/etc/modules` and `/boot/firmware/config.txt`.
 
-## Build
+### What setup does
 
-```bash
-./build
-```
+| Step | Action |
+|------|--------|
+| 1 | Detects the OS and installs required packages |
+| 2 | Compiles `oneUpPower.ko` against the running kernel's headers |
+| 3 | Compiles `argon-oneup-battery.dtbo` from the DTS source |
+| 4 | Registers, builds, and installs the module via DKMS |
+| 5 | Copies the overlay to `/boot/firmware/overlays/` |
+| 6 | Appends `dtoverlay=argon-oneup-battery` to `/boot/firmware/config.txt` |
+| 7 | Configures module autoload (`/etc/modules` or `/etc/modules-load.d/`) |
+| 8 | Writes the default modprobe config to `/etc/modprobe.d/oneUpPower.conf` |
+| 9 | Loads the module immediately with `modprobe` |
 
-Compiles two artifacts in the `battery/` directory:
-
-| File | Description |
-|------|-------------|
-| `oneUpPower.ko` | Kernel module, built against the running kernel's headers |
-| `argon-oneup-battery.dtbo` | Device Tree overlay binary, compiled from `dts/argon-oneup-battery.dts` |
-
-The module must be built on the target Pi — cross-compiled binaries will have
-a `vermagic` mismatch and will be refused by the kernel.
-
----
-
-## Install
-
-```bash
-sudo ./install
-```
-
-Installs the module and overlay, then updates the firmware configuration.
-Specifically:
-
-1. Copies `oneUpPower.ko` to `/lib/modules/$(uname -r)/kernel/drivers/power/supply/`
-2. Adds `oneUpPower` to `/etc/modules` so the module loads automatically on boot
-3. Writes the default configuration to `/etc/modprobe.d/oneUpPower.conf`
-4. Runs `depmod -a` to update the module dependency database
-5. Loads the module immediately with `modprobe`
-6. Copies `argon-oneup-battery.dtbo` to `/boot/firmware/overlays/`
-7. Appends `dtoverlay=argon-oneup-battery` to `/boot/firmware/config.txt`
-   (skipped if the line is already present)
+With DKMS the module is rebuilt automatically on every kernel update — no
+manual reinstall required. The Device Tree overlay is unaffected by kernel
+updates and does not need to be reinstalled.
 
 **A reboot is required** for the firmware to merge the overlay into the Device
-Tree. After rebooting the kernel will call `probe()` automatically and `BAT0`
-and `AC0` will appear in `/sys/class/power_supply/`.
+Tree. After rebooting the kernel calls `probe()` automatically and `BAT0` and
+`AC0` appear in `/sys/class/power_supply/`.
 
-Expected kernel log after `probe()` completes:
+### Packages installed per OS
+
+| OS | Packages |
+|----|----------|
+| Raspberry Pi OS / Debian | `build-essential`, `linux-headers-rpi-v8`, `dkms`, `device-tree-compiler` |
+| Ubuntu | `build-essential`, `linux-headers-<uname -r>`, `dkms`, `device-tree-compiler` |
+| Fedora / RHEL family | `gcc`, `make`, `dkms`, `dtc`, kernel devel matching the running kernel |
+| Alpine | `build-base`, `linux-dev`, `dtc` |
+
+On Fedora Raspberry Pi systems the platform-specific devel package is
+selected automatically — e.g. `kernel-rpi5-devel-$(uname -r)` on Pi 5.
+
+On Fedora add `dtparam=i2c_arm=on` to `/boot/config.txt` for battery state
+to be reported correctly.
+
+### Cleaning build artefacts
+
+```bash
+sudo setup clean
+```
+
+Removes `oneUpPower.ko`, intermediate object files, and
+`argon-oneup-battery.dtbo` from the source directory.
+
+---
+
+## Expected output after probe
 
 ```
 oneUpPower: Checking battery profile...
@@ -107,26 +105,15 @@ sudo ./remove
 
 Fully uninstalls the driver. Specifically:
 
-1. Unloads the module with `rmmod`
-2. Removes the `.ko` from `/lib/modules/`
-3. Removes the `oneUpPower` entry from `/etc/modules`
-4. Removes `/etc/modprobe.d/oneUpPower.conf`
-5. Removes `argon-oneup-battery.dtbo` from `/boot/firmware/overlays/`
-6. Removes the `dtoverlay=argon-oneup-battery` line from `/boot/firmware/config.txt`
+1. Removes the DKMS registration with `dkms remove`
+2. Unloads the module with `rmmod`
+3. Removes the `.ko` from `/lib/modules/`
+4. Removes the `oneUpPower` autoload entry from `/etc/modules` or `/etc/modules-load.d/`
+5. Removes `/etc/modprobe.d/oneUpPower.conf`
+6. Removes `argon-oneup-battery.dtbo` from `/boot/firmware/overlays/`
+7. Removes the `dtoverlay=argon-oneup-battery` line from `/boot/firmware/config.txt`
 
 **A reboot is required** for the firmware to stop applying the overlay.
-
----
-
-## DKMS (optional)
-
-```bash
-./setupdkms
-```
-
-Installs the driver into DKMS at `/usr/src/oneUpPower-1.0/`. With DKMS the
-module is automatically rebuilt whenever the kernel is updated. The Device
-Tree overlay does not need to be reinstalled after a kernel update.
 
 ---
 
