@@ -165,11 +165,11 @@ static void set_power_states(struct oneup_battery *bat)
 
 	if (capacity > 95)
 		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
-	else if (capacity > 85)
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
 	else if (capacity > 75)
+		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+	else if (capacity > 25)
 		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
-	else if (capacity > 40)
+	else if (capacity > 10)
 		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
 	else
 		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
