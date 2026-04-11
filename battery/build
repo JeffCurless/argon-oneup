@@ -4,7 +4,18 @@ set -euo pipefail
 
 #HEADERS=6.12.47+rpt-rpi-v8
 HEADERS=$(uname -r)
-KDIR="$(bash ./kdir.sh "$HEADERS")"
-CC_VERSION_TEXT="$(gcc --version | head -n 1)"
-make -C "$KDIR" M="$PWD" "CONFIG_CC_VERSION_TEXT=$CC_VERSION_TEXT" clean
-make -C "$KDIR" M="$PWD" "CONFIG_CC_VERSION_TEXT=$CC_VERSION_TEXT" modules
+make -C /lib/modules/$HEADERS/build M=$PWD clean
+make -C /lib/modules/$HEADERS/build M=$PWD modules
+
+# Build the device tree overlay from source.  dtc is provided by the
+# device-tree-compiler package on Raspberry Pi OS / Debian.
+if command -v dtc >/dev/null 2>&1; then
+    echo "Building device tree overlay..."
+    dtc -I dts -O dtb -o argon-oneup-battery.dtbo dts/argon-oneup-battery.dts \
+        && echo "argon-oneup-battery.dtbo built successfully." \
+        || echo "Warning: dtc failed; overlay was not built."
+else
+    echo "Warning: dtc not found; skipping overlay build."
+    echo "Install device-tree-compiler to build the overlay:"
+    echo "  sudo apt install device-tree-compiler"
+fi

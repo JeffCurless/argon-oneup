@@ -1,16 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-set -euo pipefail
-
-cd "$(dirname "$0")"
-
-# shellcheck disable=SC1091
-source ./lib.sh
-
-sudo dkms remove -m oneUpPower -v 1.0 || true
-sudo modprobe -r oneUpPower 2>/dev/null || sudo rmmod oneUpPower 2>/dev/null || true
-sudo rm -vf "$(module_install_path)"
-remove_module_autoload
-sudo rm -vf "$ONEUP_MODPROBE_CONF"
+sudo dkms remove -m oneUpPower -v 1.0 2>/dev/null || true
+sudo rmmod oneUpPower
+sudo rm -vf /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+sudo sh -c "sed -i '/oneUpPower/d' /etc/modules"
+sudo rm -vf /etc/modprobe.d/oneUpPower.conf
 sudo depmod -a
+
+# Remove the Device Tree overlay and its config.txt entry.
+# A reboot is required for the firmware to stop applying the overlay.
+sudo rm -vf /boot/firmware/overlays/argon-oneup-battery.dtbo
+sudo sh -c "sed -i '/dtoverlay=argon-oneup-battery/d' /boot/firmware/config.txt"
+echo "Overlay removed. Reboot for the change to take effect."
+
 sync
