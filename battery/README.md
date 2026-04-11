@@ -29,8 +29,12 @@ It detects the running OS and installs the appropriate packages:
 |----|--------------------|
 | Raspberry Pi OS / Debian | `build-essential`, `linux-headers-rpi-v8`, `dkms` |
 | Ubuntu | `build-essential`, `linux-headers-generic`, `dkms` |
+| Fedora / RHEL family | `gcc`, `make`, Fedora-matching kernel devel package, `dkms` |
 | Alpine | `build-base`, `linux-dev` |
 
+On Fedora Raspberry Pi systems, install the platform-specific devel package that matches the running kernel, for example `kernel-rpi5-devel-$(uname -r)` on Raspberry Pi 5. The helper scripts prefer the exact kernel build tree and only fall back to alternate naming when the system packaging is incomplete.
+
+On Fedora you have to add 'dtparam=i2c_arm=on' to /boot/config.txt for battery charge state and charge level to be displayed properly.
 `device-tree-compiler` is also required to compile the overlay:
 
 ```bash

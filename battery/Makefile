@@ -1,3 +1,4 @@
+ifneq ($(KERNELRELEASE),)
 
 # In-tree build (when CONFIG_BATTERY_ONEUP is set by Kconfig)
 obj-$(CONFIG_BATTERY_ONEUP) += oneUpPower.o
@@ -6,14 +7,19 @@ obj-$(CONFIG_BATTERY_ONEUP) += oneUpPower.o
 # kernel source tree (i.e. CONFIG_BATTERY_ONEUP is not set by Kconfig).
 obj-m += oneUpPower.o
 
+else
+
 KVERSION := $(shell uname -r)
-KDIR := /lib/modules/$(KVERSION)/build
+KDIR := $(shell bash ./kdir.sh $(KVERSION))
 PWD := $(shell pwd)
+CC_VERSION_TEXT := $(shell gcc --version | head -n 1)
 
 all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) "CONFIG_CC_VERSION_TEXT=$(CC_VERSION_TEXT)" modules
 
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) "CONFIG_CC_VERSION_TEXT=$(CC_VERSION_TEXT)" clean
+
+endif
 
 .PHONY: all clean

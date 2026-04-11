@@ -1,9 +1,9 @@
 # Argon ONE UP
 
-Hardware support code for the **Argon ONE UP laptop** (based on Raspberry Pi 5). Targets 64-bit Raspberry Pi OS.
+Hardware support code for the **Argon ONE UP laptop** (based on Raspberry Pi 5). Primarily targets 64-bit Raspberry Pi OS, with Fedora/RHEL-compatible install paths for the battery driver scripts.
 
 > [!NOTE]
-> This code is supported on 64-bit Raspberry Pi OS only. There is no current plan to support other operating systems.
+> The broader project is still centered on 64-bit Raspberry Pi OS. The `battery/` installer now handles both Debian/Ubuntu-style systems and Fedora/RHEL-style systems, but the rest of the repository is still documented around Raspberry Pi OS assumptions.
 
 ## Components
 

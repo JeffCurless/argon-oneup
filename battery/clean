@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 
 HEADERS=$(uname -r)
 make -C /lib/modules/$HEADERS/build M=$PWD clean

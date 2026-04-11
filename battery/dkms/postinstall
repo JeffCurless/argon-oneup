@@ -1,10 +1,20 @@
-#!/bin/bash
-#sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
-if ! grep -qF "oneUpPower" /etc/modules
-then
-    sudo sh -c 'echo "oneUpPower" >> /etc/modules'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [[ -r "$SCRIPT_DIR/lib.sh" ]]; then
+    # DKMS copies lib.sh next to postinstall in /usr/src/oneUpPower-1.0/.
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib.sh"
+else
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/../lib.sh"
 fi
-sudo sh -c 'echo "options oneUpPower soc_shutdown=5" > /etc/modprobe.d/oneUpPower.conf'
+
+install_module_autoload
+write_modprobe_config
 #sudo depmod -a
 #sudo insmod oneUpPower.ko
 #sync

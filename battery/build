@@ -1,4 +1,6 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 #HEADERS=6.12.47+rpt-rpi-v8
 HEADERS=$(uname -r)
