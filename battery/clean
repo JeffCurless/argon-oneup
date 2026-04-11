@@ -2,4 +2,4 @@
 
 HEADERS=$(uname -r)
 make -C /lib/modules/$HEADERS/build M=$PWD clean
-
+rm -f argon-oneup-battery.dtbo
