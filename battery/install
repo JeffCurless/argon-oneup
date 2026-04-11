@@ -1,42 +1,31 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
 # Copy the module into the kernel module tree and register it.
-sudo cp -vf oneUpPower.ko /lib/modules/`uname -r`/kernel/drivers/power/supply/oneUpPower.ko
+sudo cp -vf "$SCRIPT_DIR/oneUpPower.ko" \
+    /lib/modules/$(uname -r)/kernel/drivers/power/supply/oneUpPower.ko
 
-if ! grep -qF "oneUpPower" /etc/modules
-then
-    sudo sh -c 'echo "oneUpPower" >> /etc/modules'
-fi
-
-sudo sh -c 'echo "options oneUpPower soc_shutdown=5" > /etc/modprobe.d/oneUpPower.conf'
+install_module_autoload
+write_modprobe_config
 sudo depmod -a
 
 # Use modprobe (not insmod) so the soc_shutdown option in
 # /etc/modprobe.d/oneUpPower.conf is applied at load time.
 sudo modprobe oneUpPower
 
-# Install the device tree overlay so the kernel binds the driver automatically
-# on every boot.
-if [ -f argon-oneup-battery.dtbo ]; then
-    sudo cp -vf argon-oneup-battery.dtbo /boot/firmware/overlays/
-    if ! grep -qF "dtoverlay=argon-oneup-battery" /boot/firmware/config.txt; then
-        sudo sh -c 'echo "dtoverlay=argon-oneup-battery" >> /boot/firmware/config.txt'
-        echo "Added dtoverlay=argon-oneup-battery to /boot/firmware/config.txt"
-        echo "Note: the overlay takes effect after the next reboot."
-    else
-        echo "dtoverlay=argon-oneup-battery already present in /boot/firmware/config.txt"
-    fi
-else
-    echo "Warning: argon-oneup-battery.dtbo not found; skipping overlay install."
-    echo "Run ./build first to compile the overlay, or install it manually."
-fi
+install_overlay "$SCRIPT_DIR/argon-oneup-battery.dtbo"
 
 # The i2c_driver model requires an explicit device instantiation to trigger
 # probe().  Write to new_device unless the device is already present — e.g.
 # if the DT overlay (dts/argon-oneup-battery.dts) has been compiled, copied
 # to /boot/firmware/overlays/, and activated via config.txt, the kernel
 # already knows about the device and this step is not needed.
-if [ ! -e /sys/bus/i2c/devices/1-0064 ]; then
+if [[ ! -e /sys/bus/i2c/devices/1-0064 ]]; then
     echo "Instantiating I2C device to trigger probe()..."
     echo "oneup-battery 0x64" | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
 else

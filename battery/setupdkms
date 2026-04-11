@@ -3,20 +3,43 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+SCRIPT_DIR="$(pwd)"
 
-DKMS_DEST=/usr/src/oneUpPower-1.0
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+DKMS_VERSION=1.0
+DKMS_DEST=/usr/src/oneUpPower-${DKMS_VERSION}
 DKMS_SRC=$DKMS_DEST/src
-#
-# Setup DKMS
-#
-sudo mkdir -p $DKMS_SRC
-sudo cp ./dkms/dkms.conf $DKMS_DEST/dkms.conf
-sudo cp ./dkms/postinstall $DKMS_DEST/postinstall
-sudo cp ./lib.sh $DKMS_DEST/lib.sh
-sudo cp ./dkms/Makefile $DKMS_SRC/Makefile
-sudo cp ./kdir.sh $DKMS_SRC/kdir.sh
-sudo cp oneUpPower.c $DKMS_SRC/oneUpPower.c
 
-sudo dkms add -m oneUpPower -v 1.0
-sudo dkms build -m oneUpPower -v 1.0
-sudo dkms install -m oneUpPower -v 1.0
+# Idempotent: remove any existing registration before re-adding so that
+# a re-run always produces a clean, known-good state.
+if sudo dkms status -m oneUpPower -v "$DKMS_VERSION" 2>/dev/null | grep -q oneUpPower; then
+    echo "Removing existing DKMS registration for oneUpPower/${DKMS_VERSION}..."
+    sudo dkms remove -m oneUpPower -v "$DKMS_VERSION" --all
+fi
+
+#
+# Populate DKMS source tree
+#
+sudo mkdir -p "$DKMS_SRC"
+sudo cp ./dkms/dkms.conf   "$DKMS_DEST/dkms.conf"
+sudo cp ./dkms/postinstall "$DKMS_DEST/postinstall"
+sudo chmod +x              "$DKMS_DEST/postinstall"
+sudo cp ./lib.sh           "$DKMS_DEST/lib.sh"
+sudo cp ./dkms/Makefile    "$DKMS_SRC/Makefile"
+sudo cp ./kdir.sh          "$DKMS_SRC/kdir.sh"
+sudo cp ./oneUpPower.c     "$DKMS_SRC/oneUpPower.c"
+
+sudo dkms add     -m oneUpPower -v "$DKMS_VERSION"
+sudo dkms build   -m oneUpPower -v "$DKMS_VERSION"
+sudo dkms install -m oneUpPower -v "$DKMS_VERSION"
+
+# Install the Device Tree overlay if it has been built.
+install_overlay "$SCRIPT_DIR/argon-oneup-battery.dtbo"
+
+# Load the module immediately if it is not already running.
+if ! lsmod | grep -q "^oneUpPower[[:space:]]"; then
+    echo "Loading oneUpPower module..."
+    sudo modprobe oneUpPower
+fi

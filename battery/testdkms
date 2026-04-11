@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+#
+# testdkms — verify that the oneUpPower DKMS installation will automatically
+# rebuild and reinstall the kernel module on a kernel update.
+#
+# Runs seven sections:
+#   1. Prerequisites       — dkms present, module registered
+#   2. Module status       — built and installed for the running kernel
+#   3. postinstall         — artifacts on disk, script is executable
+#   4. AUTOINSTALL flag    — dkms.conf has AUTOINSTALL=yes
+#   5. Kernel-update sim   — remove .ko then dkms install, verify full cycle
+#   6. Module load         — modprobe succeeds after clean unload
+#   7. Device Tree overlay — .dtbo and config.txt entry present
+#
+# Usage: sudo ./testdkms
+#
+# Exit codes:  0 = all tests passed   1 = one or more tests failed
+
+set -uo pipefail
+
+MODULE=oneUpPower
+VERSION=1.0
+KVER=$(uname -r)
+# DKMS 3.x installs into updates/dkms/ as a compressed .ko.xz regardless of
+# DEST_MODULE_LOCATION in dkms.conf.  Accept either the DKMS-managed path or
+# the legacy uncompressed path under kernel/ for forward/backward compatibility.
+KO_PATH_DKMS="/lib/modules/$KVER/updates/dkms/$MODULE.ko.xz"
+KO_PATH_LEGACY="/lib/modules/$KVER/kernel/drivers/power/supply/$MODULE.ko"
+ko_exists() { [[ -f "$KO_PATH_DKMS" || -f "$KO_PATH_LEGACY" ]]; }
+ko_display() { [[ -f "$KO_PATH_DKMS" ]] && printf '%s' "$KO_PATH_DKMS" || printf '%s' "$KO_PATH_LEGACY"; }
+MODPROBE_CONF="/etc/modprobe.d/$MODULE.conf"
+AUTOLOAD_ETC="/etc/modules"
+AUTOLOAD_SYSTEMD="/etc/modules-load.d/$MODULE.conf"
+DKMS_TREE="/usr/src/${MODULE}-${VERSION}"
+
+PASS=0
+FAIL=0
+SKIP=0
+
+# ── colour helpers (stripped when stdout is not a terminal) ───────────────────
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; NC=''
+fi
+
+pass() { printf "  ${GREEN}PASS${NC}: %s\n" "$1"; PASS=$(( PASS + 1 )); }
+fail() { printf "  ${RED}FAIL${NC}: %s\n" "$1"; FAIL=$(( FAIL + 1 )); }
+skip() { printf "  ${YELLOW}SKIP${NC}: %s  [reason: %s]\n" "$1" "$2"; SKIP=$(( SKIP + 1 )); }
+
+section() { printf "\n── %s ──\n" "$1"; }
+
+# ── safety net: restore the module if the simulation leaves it missing ────────
+cleanup() {
+    local rc=$?
+    if ! ko_exists; then
+        printf "\n[cleanup] .ko missing after test — attempting restore...\n"
+        dkms install -m "$MODULE" -v "$VERSION" 2>/dev/null || true
+        depmod -a 2>/dev/null || true
+    fi
+    if ! lsmod | grep -q "^${MODULE}[[:space:]]"; then
+        modprobe "$MODULE" 2>/dev/null || true
+    fi
+    exit "$rc"
+}
+trap cleanup EXIT
+
+# ── must be root ──────────────────────────────────────────────────────────────
+if [[ $EUID -ne 0 ]]; then
+    echo "Must be run as root: sudo $0"
+    exit 1
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "1. Prerequisites"
+# ─────────────────────────────────────────────────────────────────────────────
+
+if command -v dkms >/dev/null 2>&1; then
+    pass "dkms command found"
+else
+    fail "dkms not installed — run ./firsttime first"
+    exit 1
+fi
+
+dkms_status=$(dkms status -m "$MODULE" -v "$VERSION" 2>/dev/null || true)
+
+if echo "$dkms_status" | grep -q "$MODULE"; then
+    pass "DKMS module $MODULE/$VERSION is registered"
+else
+    fail "DKMS module $MODULE/$VERSION is NOT registered — run ./setupdkms first"
+    exit 1
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "2. Module Status for Running Kernel ($KVER)"
+# ─────────────────────────────────────────────────────────────────────────────
+
+if echo "$dkms_status" | grep -q "installed"; then
+    pass "DKMS reports module installed for $KVER"
+elif echo "$dkms_status" | grep -q "built"; then
+    fail "DKMS reports module built but not installed for $KVER"
+else
+    fail "DKMS reports module not built for $KVER"
+fi
+
+if ko_exists; then
+    pass "Module file on disk: $(ko_display)"
+else
+    fail "Module file missing (checked $KO_PATH_DKMS and $KO_PATH_LEGACY)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "3. postinstall Artifacts"
+# ─────────────────────────────────────────────────────────────────────────────
+
+postinstall_path="$DKMS_TREE/postinstall"
+if [[ -f "$postinstall_path" ]]; then
+    if [[ -x "$postinstall_path" ]]; then
+        pass "postinstall is executable: $postinstall_path"
+    else
+        fail "postinstall NOT executable: $postinstall_path — kernel updates will silently skip it"
+    fi
+else
+    fail "postinstall missing from DKMS tree: $postinstall_path"
+fi
+
+lib_path="$DKMS_TREE/lib.sh"
+if [[ -f "$lib_path" ]]; then
+    pass "lib.sh present in DKMS tree: $lib_path"
+else
+    fail "lib.sh missing from DKMS tree: $lib_path — postinstall will fail at source"
+fi
+
+if [[ -f "$MODPROBE_CONF" ]]; then
+    pass "Modprobe config present: $MODPROBE_CONF"
+    if grep -qF "options $MODULE" "$MODPROBE_CONF"; then
+        pass "Modprobe config contains expected options line"
+    else
+        fail "Modprobe config malformed (no 'options $MODULE' line)"
+    fi
+else
+    fail "Modprobe config missing: $MODPROBE_CONF"
+fi
+
+if grep -qxF "$MODULE" "$AUTOLOAD_ETC" 2>/dev/null \
+   || { [[ -f "$AUTOLOAD_SYSTEMD" ]] && grep -qxF "$MODULE" "$AUTOLOAD_SYSTEMD" 2>/dev/null; }; then
+    pass "Module configured for autoload on boot"
+else
+    fail "Module NOT in any autoload config ($AUTOLOAD_ETC or $AUTOLOAD_SYSTEMD)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "4. AUTOINSTALL Flag"
+# ─────────────────────────────────────────────────────────────────────────────
+
+dkms_conf="$DKMS_TREE/dkms.conf"
+if [[ -f "$dkms_conf" ]]; then
+    if grep -qi 'AUTOINSTALL.*yes' "$dkms_conf"; then
+        pass "AUTOINSTALL=yes set in dkms.conf"
+    else
+        fail "AUTOINSTALL=yes missing from dkms.conf — module will NOT rebuild on kernel update"
+    fi
+else
+    fail "dkms.conf not found: $dkms_conf"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "5. Kernel-Update Simulation (remove → reinstall for $KVER)"
+# ─────────────────────────────────────────────────────────────────────────────
+# This is the core test: reproduce what happens when the system installs a new
+# kernel package.  The kernel package's post-install hook calls
+# "dkms autoinstall", which in turn runs "dkms install" for every registered
+# module that has AUTOINSTALL=yes.  We do the equivalent here:
+#   a) strip the installed .ko (simulates "new kernel, no module yet")
+#   b) run dkms install  (simulates the DKMS hook)
+#   c) verify the .ko is back and postinstall ran
+
+echo "  Removing installed module for $KVER (simulates pre-update state)..."
+if dkms remove -m "$MODULE" -v "$VERSION" -k "$KVER" 2>/dev/null; then
+    pass "Module removed from $KVER"
+else
+    fail "dkms remove failed — cannot continue simulation"
+    FAIL=$(( FAIL + 1 ))
+fi
+
+if ! ko_exists; then
+    pass ".ko correctly absent after remove"
+else
+    fail ".ko still present after remove (unexpected): $(ko_display)"
+fi
+
+# Capture the soc_shutdown value before reinstall so we can verify it wasn't reset.
+soc_before=""
+if [[ -f "$MODPROBE_CONF" ]]; then
+    soc_before=$(grep -oP 'soc_shutdown=\K\d+' "$MODPROBE_CONF" 2>/dev/null || true)
+fi
+
+echo "  Reinstalling via 'dkms install' (simulates kernel-update DKMS hook)..."
+install_output=$(dkms install -m "$MODULE" -v "$VERSION" 2>&1)
+install_rc=$?
+if [[ $install_rc -eq 0 ]]; then
+    pass "dkms install completed successfully"
+else
+    fail "dkms install FAILED (exit $install_rc)"
+    printf '%s\n' "$install_output" | sed 's/^/    /'
+fi
+
+if ko_exists; then
+    pass ".ko restored after reinstall: $(ko_display)"
+else
+    fail ".ko missing after reinstall — module was not placed by DKMS"
+fi
+
+if [[ -f "$MODPROBE_CONF" ]]; then
+    pass "Modprobe config present after reinstall"
+
+    # Verify postinstall did NOT overwrite a customised soc_shutdown value.
+    if [[ -n "$soc_before" ]]; then
+        soc_after=$(grep -oP 'soc_shutdown=\K\d+' "$MODPROBE_CONF" 2>/dev/null || true)
+        if [[ "$soc_before" == "$soc_after" ]]; then
+            pass "soc_shutdown preserved after reinstall (value: $soc_after)"
+        else
+            fail "soc_shutdown changed by postinstall: was $soc_before, now $soc_after"
+        fi
+    fi
+else
+    fail "Modprobe config missing after reinstall — postinstall did not run or failed"
+fi
+
+echo "  Updating module dependency database..."
+depmod -a
+pass "depmod -a completed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "6. Module Load Test"
+# ─────────────────────────────────────────────────────────────────────────────
+
+skip_load=0
+if lsmod | grep -q "^${MODULE}[[:space:]]"; then
+    echo "  Module currently loaded; unloading for a clean modprobe test..."
+    if rmmod "$MODULE" 2>/dev/null; then
+        pass "rmmod succeeded"
+    else
+        skip "rmmod / modprobe cycle" "module in use while hardware is active"
+        skip_load=1
+    fi
+fi
+
+if [[ $skip_load -eq 0 ]]; then
+    if modprobe "$MODULE" 2>/dev/null; then
+        pass "modprobe $MODULE succeeded"
+    else
+        fail "modprobe $MODULE failed — run: sudo dmesg | grep $MODULE"
+    fi
+
+    if lsmod | grep -q "^${MODULE}[[:space:]]"; then
+        pass "Module visible in lsmod after modprobe"
+    else
+        fail "Module not in lsmod after modprobe"
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "7. Device Tree Overlay"
+# ─────────────────────────────────────────────────────────────────────────────
+
+dtbo_installed="/boot/firmware/overlays/argon-oneup-battery.dtbo"
+config_txt="/boot/firmware/config.txt"
+
+if [[ -f "$dtbo_installed" ]]; then
+    pass "DT overlay installed: $dtbo_installed"
+else
+    fail "DT overlay missing: $dtbo_installed — run sudo ./setup"
+fi
+
+if [[ -f "$config_txt" ]]; then
+    if grep -qF "dtoverlay=argon-oneup-battery" "$config_txt"; then
+        pass "dtoverlay=argon-oneup-battery present in $config_txt"
+    else
+        fail "dtoverlay=argon-oneup-battery missing from $config_txt — run sudo ./setup"
+    fi
+else
+    skip "config.txt check" "/boot/firmware/config.txt not found"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+printf "\n══════════════════════════════════════\n"
+printf "  Passed:  %d\n" "$PASS"
+printf "  Failed:  %d\n" "$FAIL"
+printf "  Skipped: %d\n" "$SKIP"
+printf "══════════════════════════════════════\n"
+
+if [[ $FAIL -gt 0 ]]; then
+    printf "${RED}RESULT: FAILED (%d test(s) failed)${NC}\n\n" "$FAIL"
+    exit 1
+fi
+printf "${GREEN}RESULT: ALL TESTS PASSED${NC}\n\n"
+exit 0
