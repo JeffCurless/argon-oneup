@@ -71,6 +71,7 @@ struct oneup_battery {
 	int status;         /* POWER_SUPPLY_STATUS_* */
 	int capacity_level; /* POWER_SUPPLY_CAPACITY_LEVEL_* */
 	int soc_shutdown;   /* threshold copied from module param at probe */
+	bool shutdown_triggered; /* true once orderly_poweroff has been called */
 };
 
 //
@@ -412,19 +413,29 @@ static void oneup_battery_work(struct work_struct *work)
 {
 	struct oneup_battery *bat =
 		container_of(to_delayed_work(work), struct oneup_battery, work);
+	int prev_soc            = bat->soc;
+	int prev_ac_online      = bat->ac_online;
+	int prev_status         = bat->status;
+	int prev_capacity_level = bat->capacity_level;
 
 	check_ac_power(bat);
 	check_battery_state(bat);
 	set_power_states(bat);
 
-	if (bat->ac_online == 0 && bat->soc < bat->soc_shutdown) {
+	if (bat->ac_online == 0 && bat->soc < bat->soc_shutdown &&
+	    !bat->shutdown_triggered) {
 		PR_INFO("Performing system shutdown: unplugged and power at %d%%\n",
 			bat->soc);
+		bat->shutdown_triggered = true;
 		shutdown_helper();
 	}
 
-	power_supply_changed(bat->bat_psy);
-	power_supply_changed(bat->ac_psy);
+	if (bat->soc != prev_soc || bat->status != prev_status ||
+	    bat->capacity_level != prev_capacity_level)
+		power_supply_changed(bat->bat_psy);
+
+	if (bat->ac_online != prev_ac_online)
+		power_supply_changed(bat->ac_psy);
 
 	schedule_delayed_work(&bat->work, HZ);
 }
