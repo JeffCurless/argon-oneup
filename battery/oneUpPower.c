@@ -68,6 +68,8 @@ struct oneup_battery {
 
 	int soc;            /* state of charge, 0–100 % */
 	int ac_online;      /* 1 = charger connected */
+	int ac_candidate;   /* most recent raw read awaiting confirmation */
+	int ac_debounce;    /* consecutive polls confirming ac_candidate */
 	int status;         /* POWER_SUPPLY_STATUS_* */
 	int capacity_level; /* POWER_SUPPLY_CAPACITY_LEVEL_* */
 	int soc_shutdown;   /* threshold copied from module param at probe */
@@ -78,6 +80,7 @@ struct oneup_battery {
 // Module parameter — global default, copied into bat->soc_shutdown at probe.
 //
 static int soc_shutdown = 5;
+static int ac_debounce_polls = 3;
 
 //
 // Battery model profile for the CW2217 fuel gauge (80 bytes starting at REG_PROFILE).
@@ -196,6 +199,7 @@ static void check_ac_power(struct oneup_battery *bat)
 {
 	int current_high;
 	int plugged_in;
+	int threshold;
 
 	current_high = i2c_smbus_read_byte_data(bat->client, CURRENT_HIGH_REG);
 	if (current_high < 0) {
@@ -205,8 +209,27 @@ static void check_ac_power(struct oneup_battery *bat)
 
 	plugged_in = ((current_high & 0x80) == 0x80) ? 0 : 1;
 
-	if (bat->ac_online != plugged_in) {
-		bat->ac_online = plugged_in;
+	/* Raw read matches current state — no transition in progress. */
+	if (plugged_in == bat->ac_online) {
+		bat->ac_candidate = plugged_in;
+		bat->ac_debounce  = 0;
+		return;
+	}
+
+	/* Accumulate consecutive confirmations of the candidate value. */
+	if (plugged_in == bat->ac_candidate) {
+		bat->ac_debounce++;
+	} else {
+		bat->ac_candidate = plugged_in;
+		bat->ac_debounce  = 1;
+	}
+
+	/* Clamp the tunable to a sane range at point of use. */
+	threshold = clamp_val(ac_debounce_polls, 1, 10);
+
+	if (bat->ac_debounce >= threshold) {
+		bat->ac_online   = plugged_in;
+		bat->ac_debounce = 0;
 		if (bat->ac_online)
 			PR_INFO("AC Power is connected.\n");
 		else
@@ -571,6 +594,7 @@ static int oneup_battery_probe(struct i2c_client *client)
 	bat->client         = client;
 	bat->soc            = 100;
 	bat->ac_online      = 1;
+	bat->ac_candidate   = 1;
 	bat->status         = POWER_SUPPLY_STATUS_DISCHARGING;
 	bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
 	bat->soc_shutdown   = soc_shutdown;
@@ -672,6 +696,9 @@ static const struct kernel_param_ops param_ops_soc_shutdown = {
 #define param_check_soc_shutdown(name, p) __param_check(name, p, void)
 module_param(soc_shutdown, soc_shutdown, 0644);
 MODULE_PARM_DESC(soc_shutdown, "Shutdown system when the battery state of charge is lower than this value.");
+
+module_param(ac_debounce_polls, int, 0644);
+MODULE_PARM_DESC(ac_debounce_polls, "Number of consecutive polls (1-10) to confirm AC state change (default 3).");
 
 MODULE_DESCRIPTION("Power supply driver for Argon40 1UP");
 MODULE_AUTHOR("Jeff Curless <jeff@thecurlesses.com>");
