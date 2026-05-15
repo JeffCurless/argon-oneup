@@ -18,6 +18,11 @@ if sudo dkms status -m oneUpPower -v "$DKMS_VERSION" 2>/dev/null | grep -q oneUp
     echo "Removing existing DKMS registration for oneUpPower/${DKMS_VERSION}..."
     sudo dkms remove -m oneUpPower -v "$DKMS_VERSION" --all
 fi
+# Also remove the source tree — dkms add fails if the directory already exists
+# even when no dkms registration is present (e.g. after a partial run).
+if [ -d "$DKMS_DEST" ]; then
+    sudo rm -rf "$DKMS_DEST"
+fi
 
 #
 # Populate DKMS source tree
