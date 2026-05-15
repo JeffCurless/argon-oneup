@@ -108,9 +108,9 @@ install_overlay() {
         echo "Run ./setup first to compile the overlay."
         return 0
     fi
-    cp -vf "$dtbo_src" "$ONEUP_OVERLAY_DIR/"
+    sudo cp -vf "$dtbo_src" "$ONEUP_OVERLAY_DIR/"
     if ! grep -qF "dtoverlay=argon-oneup-battery" "$ONEUP_CONFIG_TXT"; then
-        printf 'dtoverlay=argon-oneup-battery\n' >> "$ONEUP_CONFIG_TXT"
+        printf 'dtoverlay=argon-oneup-battery\n' | sudo tee -a "$ONEUP_CONFIG_TXT" > /dev/null
         echo "Added dtoverlay=argon-oneup-battery to $ONEUP_CONFIG_TXT"
         echo "Note: the overlay takes effect after the next reboot."
     else
