@@ -605,6 +605,18 @@ static int oneup_battery_probe(struct i2c_client *client)
 		dev_warn(&client->dev,
 			 "Profile init failed; SOC readings may be inaccurate\n");
 
+	/*
+	 * Read the real AC state before registering the power supplies so the
+	 * first get_property call is correct.  Without this, the hardcoded
+	 * ac_online=1 above causes the debounce logic to report AC connected
+	 * for several poll cycles when the system boots on battery.
+	 */
+	ret = i2c_smbus_read_byte_data(client, CURRENT_HIGH_REG);
+	if (ret >= 0) {
+		bat->ac_online    = ((ret & 0x80) == 0x80) ? 0 : 1;
+		bat->ac_candidate = bat->ac_online;
+	}
+
 	bat_cfg.drv_data = bat;
 	bat_cfg.fwnode   = dev_fwnode(&client->dev);
 
