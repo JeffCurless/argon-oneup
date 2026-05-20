@@ -72,12 +72,11 @@ struct oneup_battery {
 	int ac_debounce;    /* consecutive polls confirming ac_candidate */
 	int status;         /* POWER_SUPPLY_STATUS_* */
 	int capacity_level; /* POWER_SUPPLY_CAPACITY_LEVEL_* */
-	int soc_shutdown;   /* threshold copied from module param at probe */
 	bool shutdown_triggered; /* true once orderly_poweroff has been called */
 };
 
 //
-// Module parameter — global default, copied into bat->soc_shutdown at probe.
+// Module parameters — read at runtime via READ_ONCE() from the work handler.
 //
 static int soc_shutdown = 5;
 static int ac_debounce_polls = 3;
@@ -445,7 +444,7 @@ static void oneup_battery_work(struct work_struct *work)
 	check_battery_state(bat);
 	set_power_states(bat);
 
-	if (bat->ac_online == 0 && bat->soc < bat->soc_shutdown &&
+	if (bat->ac_online == 0 && bat->soc < READ_ONCE(soc_shutdown) &&
 	    !bat->shutdown_triggered) {
 		PR_INFO("Performing system shutdown: unplugged and power at %d%%\n",
 			bat->soc);
@@ -597,7 +596,6 @@ static int oneup_battery_probe(struct i2c_client *client)
 	bat->ac_candidate   = 1;
 	bat->status         = POWER_SUPPLY_STATUS_DISCHARGING;
 	bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
-	bat->soc_shutdown   = soc_shutdown;
 	i2c_set_clientdata(client, bat);
 
 	ret = init_battery_profile(client);
@@ -687,7 +685,7 @@ static int param_set_soc_shutdown(const char *key, const struct kernel_param *kp
 			return 0;
 		} else {
 			PR_INFO("Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n", soc);
-			return 0;
+			return -EINVAL;
 		}
 	} else {
 		PR_INFO("Could not convert to integer\n");
