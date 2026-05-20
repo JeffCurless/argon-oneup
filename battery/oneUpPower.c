@@ -9,6 +9,8 @@
  * module_i2c_driver() instead of manual module_init/exit.
  */
 
+#define pr_fmt(fmt) "oneUpPower: " fmt
+
 #include <linux/delay.h>
 #include <linux/devm-helpers.h>
 #include <linux/errno.h>
@@ -27,9 +29,6 @@
 #define VERSION_MINOR   0
 #define VERSION_EDIT    3
 
-#define DRV_NAME                    "oneUpPower"
-#define PR_INFO(fmt, arg...)        printk(KERN_INFO DRV_NAME ": " fmt, ##arg)
-#define PR_ERR(fmt, arg...)         printk(KERN_ERR  DRV_NAME ": " fmt, ##arg)
 
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)
 #define TOTAL_CHARGE                (4800 * 1000)
@@ -202,7 +201,7 @@ static void check_ac_power(struct oneup_battery *bat)
 
 	current_high = i2c_smbus_read_byte_data(bat->client, CURRENT_HIGH_REG);
 	if (current_high < 0) {
-		PR_ERR("Failed to read current register: %d\n", current_high);
+		dev_err(&bat->client->dev, "Failed to read current register: %d\n", current_high);
 		return;
 	}
 
@@ -230,9 +229,9 @@ static void check_ac_power(struct oneup_battery *bat)
 		bat->ac_online   = plugged_in;
 		bat->ac_debounce = 0;
 		if (bat->ac_online)
-			PR_INFO("AC Power is connected.\n");
+			dev_info(&bat->client->dev, "AC Power is connected.\n");
 		else
-			PR_INFO("AC Power is disconnected.\n");
+			dev_info(&bat->client->dev, "AC Power is disconnected.\n");
 	}
 }
 
@@ -247,7 +246,7 @@ static void check_battery_state(struct oneup_battery *bat)
 
 	soc = i2c_smbus_read_byte_data(bat->client, SOC_HIGH_REG);
 	if (soc < 0) {
-		PR_ERR("Failed to read SOC register: %d\n", soc);
+		dev_err(&bat->client->dev, "Failed to read SOC register: %d\n", soc);
 		return;
 	}
 	if (soc > 100)
@@ -255,7 +254,7 @@ static void check_battery_state(struct oneup_battery *bat)
 
 	if (bat->soc != soc) {
 		bat->soc = soc;
-		PR_INFO("Battery State of charge is %d%%\n", soc);
+		dev_info(&bat->client->dev, "Battery State of charge is %d%%\n", soc);
 	}
 }
 
@@ -295,14 +294,14 @@ static int restart_battery_ic(struct i2c_client *client)
 		for (wait = 0; wait < 5; wait++) {
 			icstate = i2c_smbus_read_byte_data(client, REG_ICSTATE);
 			if (icstate >= 0 && (icstate & 0x0C) != 0) {
-				PR_INFO("Battery IC activated.\n");
+				dev_info(&client->dev, "Battery IC activated.\n");
 				return 0;
 			}
 			msleep(1000);
 		}
 	}
 
-	PR_ERR("Battery IC did not become ready.\n");
+	dev_err(&client->dev, "Battery IC did not become ready.\n");
 	return -ETIMEDOUT;
 }
 
@@ -329,7 +328,7 @@ static int init_battery_profile(struct i2c_client *client)
 	int  ret;
 	bool profile_ok = false;
 
-	PR_INFO("Checking battery profile...\n");
+	dev_info(&client->dev, "Checking battery profile...\n");
 
 	//
 	// IC is active when REG_CONTROL reads back 0
@@ -348,7 +347,7 @@ static int init_battery_profile(struct i2c_client *client)
 			for (i = 0; i < ARRAY_SIZE(battery_profile); i++) {
 				val = i2c_smbus_read_byte_data(client, REG_PROFILE + i);
 				if (val < 0 || (u8)val != battery_profile[i]) {
-					PR_INFO("Battery profile mismatch at byte %d.\n", i);
+					dev_info(&client->dev, "Battery profile mismatch at byte %d.\n", i);
 					profile_ok = false;
 					break;
 				}
@@ -357,25 +356,25 @@ static int init_battery_profile(struct i2c_client *client)
 	}
 
 	if (profile_ok) {
-		PR_INFO("Battery profile is valid.\n");
+		dev_info(&client->dev, "Battery profile is valid.\n");
 		return 0;
 	}
 
-	PR_INFO("Programming battery profile...\n");
+	dev_info(&client->dev, "Programming battery profile...\n");
 
 	//
 	// Restart then sleep the IC before writing
 	//
 	ret = i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_RESTART);
 	if (ret < 0) {
-		PR_ERR("Failed to restart IC before profile write: %d\n", ret);
+		dev_err(&client->dev, "Failed to restart IC before profile write: %d\n", ret);
 		return ret;
 	}
 	msleep(500);
 
 	ret = i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_SLEEP);
 	if (ret < 0) {
-		PR_ERR("Failed to sleep IC before profile write: %d\n", ret);
+		dev_err(&client->dev, "Failed to sleep IC before profile write: %d\n", ret);
 		return ret;
 	}
 	msleep(500);
@@ -386,7 +385,7 @@ static int init_battery_profile(struct i2c_client *client)
 	for (i = 0; i < ARRAY_SIZE(battery_profile); i++) {
 		ret = i2c_smbus_write_byte_data(client, REG_PROFILE + i, battery_profile[i]);
 		if (ret < 0) {
-			PR_ERR("Failed to write profile byte %d: %d\n", i, ret);
+			dev_err(&client->dev, "Failed to write profile byte %d: %d\n", i, ret);
 			return ret;
 		}
 	}
@@ -396,7 +395,7 @@ static int init_battery_profile(struct i2c_client *client)
 	//
 	ret = i2c_smbus_write_byte_data(client, REG_SOCALERT, 0x80);
 	if (ret < 0) {
-		PR_ERR("Failed to set profile flag: %d\n", ret);
+		dev_err(&client->dev, "Failed to set profile flag: %d\n", ret);
 		return ret;
 	}
 	msleep(500);
@@ -406,7 +405,7 @@ static int init_battery_profile(struct i2c_client *client)
 	//
 	ret = i2c_smbus_write_byte_data(client, REG_GPIOCONFIG, 0x00);
 	if (ret < 0) {
-		PR_ERR("Failed to configure GPIO: %d\n", ret);
+		dev_err(&client->dev, "Failed to configure GPIO: %d\n", ret);
 		return ret;
 	}
 	msleep(500);
@@ -416,11 +415,11 @@ static int init_battery_profile(struct i2c_client *client)
 	//
 	ret = restart_battery_ic(client);
 	if (ret != 0) {
-		PR_ERR("Battery IC failed to restart after profile update.\n");
+		dev_err(&client->dev, "Battery IC failed to restart after profile update.\n");
 		return ret;
 	}
 
-	PR_INFO("Battery profile updated successfully.\n");
+	dev_info(&client->dev, "Battery profile updated successfully.\n");
 	return 0;
 }
 
@@ -446,8 +445,8 @@ static void oneup_battery_work(struct work_struct *work)
 
 	if (bat->ac_online == 0 && bat->soc < READ_ONCE(soc_shutdown) &&
 	    !bat->shutdown_triggered) {
-		PR_INFO("Performing system shutdown: unplugged and power at %d%%\n",
-			bat->soc);
+		dev_info(&bat->client->dev, "Performing system shutdown: unplugged and power at %d%%\n",
+			 bat->soc);
 		bat->shutdown_triggered = true;
 		shutdown_helper();
 	}
@@ -544,7 +543,7 @@ static int oneup_bat_get_property(struct power_supply *psy,
 		val->strval = UTS_RELEASE;
 		break;
 	default:
-		PR_INFO("%s: some properties deliberately report errors.\n", __func__);
+		dev_dbg(&bat->client->dev, "%s: unsupported property\n", __func__);
 		return -EINVAL;
 	}
 	return 0;
@@ -642,8 +641,8 @@ static int oneup_battery_probe(struct i2c_client *client)
 
 	schedule_delayed_work(&bat->work, 0);
 
-	PR_INFO("Probe successful (v%d.%d.%d)\n",
-		VERSION_MAJOR, VERSION_MINOR, VERSION_EDIT);
+	dev_info(&client->dev, "Probe successful (v%d.%d.%d)\n",
+		 VERSION_MAJOR, VERSION_MINOR, VERSION_EDIT);
 	return 0;
 }
 
@@ -676,19 +675,19 @@ static int param_set_soc_shutdown(const char *key, const struct kernel_param *kp
 
 	if (kstrtol(key, 10, &soc) == 0) {
 		if (soc == 0) {
-			PR_INFO("Disabling automatic shutdown when battery is below threshold.\n");
+			pr_info("Disabling automatic shutdown when battery is below threshold.\n");
 			soc_shutdown = 0;
 			return 0;
 		} else if ((soc >= 1) && (soc <= 20)) {
-			PR_INFO("Changing automatic shutdown when battery is below %ld%%\n", soc);
+			pr_info("Changing automatic shutdown when battery is below %ld%%\n", soc);
 			soc_shutdown = soc;
 			return 0;
 		} else {
-			PR_INFO("Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n", soc);
+			pr_warn("Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n", soc);
 			return -EINVAL;
 		}
 	} else {
-		PR_INFO("Could not convert to integer\n");
+		pr_warn("Could not convert to integer\n");
 	}
 	return -ENOENT;
 }
