@@ -28,7 +28,7 @@
 
 #define VERSION_MAJOR   1
 #define VERSION_MINOR   0
-#define VERSION_EDIT    4
+#define VERSION_EDIT    5
 
 
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)
@@ -639,7 +639,10 @@ static int oneup_battery_probe(struct i2c_client *client)
 	if (ret >= 0) {
 		bat->ac_online    = ((ret & 0x80) == 0x80) ? 0 : 1;
 		bat->ac_candidate = bat->ac_online;
+		dev_info(&client->dev, "AC Power is %s at boot.\n",
+			 bat->ac_online ? "connected" : "not connected");
 	}
+	set_power_states(bat);
 
 	bat_cfg.drv_data = bat;
 	bat_cfg.fwnode   = dev_fwnode(&client->dev);
