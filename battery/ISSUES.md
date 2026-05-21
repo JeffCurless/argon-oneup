@@ -10,19 +10,11 @@ falling through to the full profile-reprogram path.
 
 ---
 
-### 3. `restart_battery_ic`: write return values ignored in retry loop
+### ~~3. `restart_battery_ic`: write return values ignored in retry loop~~ *(fixed)*
 
-**Location:** `restart_battery_ic` (lines 288–291)
-
-```c
-i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_RESTART);
-msleep(500);
-i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_ACTIVE);
-```
-
-Both writes are fire-and-forget. Bus errors go unreported and the loop burns the
-full 18-second retry budget (3 attempts × 6 seconds each) before returning
-`-ETIMEDOUT`, with no indication of the real cause.
+Both `CTRL_RESTART` and `CTRL_ACTIVE` writes now check the return value. A
+negative errno is logged and returned immediately — a broken bus no longer
+burns the full 18-second retry budget before surfacing the real error.
 
 ---
 
