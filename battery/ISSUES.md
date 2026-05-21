@@ -56,15 +56,11 @@ the first I2C call returns an obscure error.
 
 ---
 
-### 5. `bat->status` stale at boot after initial AC read
+### ~~5. `bat->status` stale at boot after initial AC read~~ *(fixed)*
 
-**Location:** `oneup_battery_probe` (lines 611–615)
-
-After the boot-time AC read that corrects `bat->ac_online`, `bat->status` is
-never updated from its initial `POWER_SUPPLY_STATUS_DISCHARGING` value. If the
-charger is connected at boot, there is a brief window before the first workqueue
-fires where the AC supply reports `ONLINE=1` but the battery supply reports
-`DISCHARGING`. Fix: call `set_power_states(bat)` after the initial read.
+`set_power_states(bat)` is now called immediately after the boot-time AC read
+in `oneup_battery_probe`, so `bat->status` and `bat->capacity_level` are
+consistent with the real AC state before the power supplies are registered.
 
 ---
 
