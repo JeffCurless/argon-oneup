@@ -297,12 +297,21 @@ static int restart_battery_ic(struct i2c_client *client)
 	int icstate;
 	int attempt;
 	int wait;
+	int ret;
 
 	for (attempt = 0; attempt < 3; attempt++) {
-		i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_RESTART);
+		ret = i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_RESTART);
+		if (ret < 0) {
+			dev_err(&client->dev, "Failed to write CTRL_RESTART: %d\n", ret);
+			return ret;
+		}
 		msleep(500);
 
-		i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_ACTIVE);
+		ret = i2c_smbus_write_byte_data(client, REG_CONTROL, CTRL_ACTIVE);
+		if (ret < 0) {
+			dev_err(&client->dev, "Failed to write CTRL_ACTIVE: %d\n", ret);
+			return ret;
+		}
 		msleep(500);
 
 		for (wait = 0; wait < 5; wait++) {
