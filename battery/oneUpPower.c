@@ -624,6 +624,9 @@ static int oneup_battery_probe(struct i2c_client *client)
 	struct power_supply_config ac_cfg = {};
 	int ret;
 
+	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
+		return -EOPNOTSUPP;
+
 	bat = devm_kzalloc(&client->dev, sizeof(*bat), GFP_KERNEL);
 	if (!bat)
 		return -ENOMEM;

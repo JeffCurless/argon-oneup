@@ -18,20 +18,11 @@ burns the full 18-second retry budget before surfacing the real error.
 
 ---
 
-### 4. Missing `i2c_check_functionality` in probe
+### ~~4. Missing `i2c_check_functionality` in probe~~ *(fixed)*
 
-**Location:** `oneup_battery_probe` (before first I2C call)
-
-The driver never verifies the adapter supports `I2C_FUNC_SMBUS_BYTE_DATA` before
-issuing SMBUS calls. Standard Linux I2C driver practice:
-
-```c
-if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
-    return -EOPNOTSUPP;
-```
-
-Without this, the driver binds to adapters that can't fulfill its requests and
-the first I2C call returns an obscure error.
+`oneup_battery_probe` now calls `i2c_check_functionality` for
+`I2C_FUNC_SMBUS_BYTE_DATA` as its first action and returns `-EOPNOTSUPP`
+immediately if the adapter cannot fulfill SMBUS byte-data requests.
 
 ---
 
