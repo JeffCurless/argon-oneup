@@ -2,24 +2,11 @@
 
 ## Medium Severity
 
-### 1. `init_battery_profile`: I2C read error on `REG_CONTROL` not handled
+### ~~1. `init_battery_profile`: I2C read error on `REG_CONTROL` not handled~~ *(fixed)*
 
-**Location:** `init_battery_profile` (line 336)
-
-```c
-control = i2c_smbus_read_byte_data(client, REG_CONTROL);
-if (control == 0) {
-```
-
-`i2c_smbus_read_byte_data` returns a negative error code on failure. A negative
-value is not zero, so any I2C error causes `profile_ok` to stay false and the
-function to fall through to the full profile-reprogram path — writing to the IC
-over a broken bus. The error should be checked and returned explicitly:
-
-```c
-if (control < 0)
-    return control;
-```
+`i2c_smbus_read_byte_data` on `REG_CONTROL` now checks for a negative return
+value and returns the error immediately, preventing a broken bus from silently
+falling through to the full profile-reprogram path.
 
 ---
 

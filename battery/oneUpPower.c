@@ -348,6 +348,10 @@ static int init_battery_profile(struct i2c_client *client)
 	// IC is active when REG_CONTROL reads back 0
 	//
 	control = i2c_smbus_read_byte_data(client, REG_CONTROL);
+	if (control < 0) {
+		dev_err(&client->dev, "Failed to read control register: %d\n", control);
+		return control;
+	}
 	if (control == 0) {
 		//
 		// IC is up; check if the profile-loaded flag is set
