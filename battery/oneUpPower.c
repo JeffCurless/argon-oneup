@@ -28,7 +28,7 @@
 
 #define VERSION_MAJOR   1
 #define VERSION_MINOR   0
-#define VERSION_EDIT    3
+#define VERSION_EDIT    4
 
 
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)
