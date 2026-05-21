@@ -9,7 +9,7 @@
  * module_i2c_driver() instead of manual module_init/exit.
  */
 
-#define pr_fmt(fmt) "oneUpPower: " fmt
+#define pr_fmt(fmt) "oneup-battery " fmt
 
 #include <linux/delay.h>
 #include <linux/devm-helpers.h>
