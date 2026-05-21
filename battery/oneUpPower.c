@@ -9,7 +9,7 @@
  * module_i2c_driver() instead of manual module_init/exit.
  */
 
-#define pr_fmt(fmt) "oneUpPower: " fmt
+#define pr_fmt(fmt) "oneup-battery " fmt
 
 #include <linux/delay.h>
 #include <linux/devm-helpers.h>
@@ -21,13 +21,14 @@
 #include <linux/pm.h>
 #include <linux/power_supply.h>
 #include <linux/reboot.h>
+#include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <generated/utsrelease.h>
 
 
 #define VERSION_MAJOR   1
 #define VERSION_MINOR   0
-#define VERSION_EDIT    3
+#define VERSION_EDIT    4
 
 
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)
@@ -64,6 +65,12 @@ struct oneup_battery {
 	struct delayed_work   work;
 	struct power_supply  *bat_psy;
 	struct power_supply  *ac_psy;
+
+	/*
+	 * Protects soc, ac_online, status, and capacity_level against concurrent
+	 * reads from sysfs getters while the work handler writes them.
+	 */
+	spinlock_t lock;
 
 	int soc;            /* state of charge, 0–100 % */
 	int ac_online;      /* 1 = charger connected */
@@ -164,26 +171,29 @@ static const struct power_supply_desc oneup_ac_desc = {
 static void set_power_states(struct oneup_battery *bat)
 {
 	int capacity = bat->soc;
+	int new_level, new_status;
 
 	if (capacity > 95)
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+		new_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
 	else if (capacity > 75)
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+		new_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
 	else if (capacity > 25)
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+		new_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
 	else if (capacity > 10)
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+		new_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
 	else
-		bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+		new_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
 
-	if (bat->ac_online) {
-		if (capacity > 95)
-			bat->status = POWER_SUPPLY_STATUS_FULL;
-		else
-			bat->status = POWER_SUPPLY_STATUS_CHARGING;
-	} else {
-		bat->status = POWER_SUPPLY_STATUS_DISCHARGING;
-	}
+	if (bat->ac_online)
+		new_status = (capacity > 95) ? POWER_SUPPLY_STATUS_FULL
+					     : POWER_SUPPLY_STATUS_CHARGING;
+	else
+		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
+
+	spin_lock(&bat->lock);
+	bat->capacity_level = new_level;
+	bat->status         = new_status;
+	spin_unlock(&bat->lock);
 }
 
 //
@@ -226,9 +236,11 @@ static void check_ac_power(struct oneup_battery *bat)
 	threshold = clamp_val(ac_debounce_polls, 1, 10);
 
 	if (bat->ac_debounce >= threshold) {
-		bat->ac_online   = plugged_in;
+		spin_lock(&bat->lock);
+		bat->ac_online = plugged_in;
+		spin_unlock(&bat->lock);
 		bat->ac_debounce = 0;
-		if (bat->ac_online)
+		if (plugged_in)
 			dev_info(&bat->client->dev, "AC Power is connected.\n");
 		else
 			dev_info(&bat->client->dev, "AC Power is disconnected.\n");
@@ -253,7 +265,9 @@ static void check_battery_state(struct oneup_battery *bat)
 		soc = 100;
 
 	if (bat->soc != soc) {
+		spin_lock(&bat->lock);
 		bat->soc = soc;
+		spin_unlock(&bat->lock);
 		dev_info(&bat->client->dev, "Battery State of charge is %d%%\n", soc);
 	}
 }
@@ -469,10 +483,15 @@ static int oneup_ac_get_property(struct power_supply *psy,
 				 union power_supply_propval *val)
 {
 	struct oneup_battery *bat = power_supply_get_drvdata(psy);
+	int ac_online;
+
+	spin_lock(&bat->lock);
+	ac_online = bat->ac_online;
+	spin_unlock(&bat->lock);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
-		val->intval = bat->ac_online;
+		val->intval = ac_online;
 		break;
 	default:
 		return -EINVAL;
@@ -488,10 +507,17 @@ static int oneup_bat_get_property(struct power_supply *psy,
 				  union power_supply_propval *val)
 {
 	struct oneup_battery *bat = power_supply_get_drvdata(psy);
+	int soc, status, capacity_level;
+
+	spin_lock(&bat->lock);
+	soc            = bat->soc;
+	status         = bat->status;
+	capacity_level = bat->capacity_level;
+	spin_unlock(&bat->lock);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
-		val->intval = bat->status;
+		val->intval = status;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
@@ -506,26 +532,26 @@ static int oneup_bat_get_property(struct power_supply *psy,
 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
-		val->intval = bat->capacity_level;
+		val->intval = capacity_level;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = bat->soc;
+		val->intval = soc;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_EMPTY:
 		val->intval = 0;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_NOW:
-		val->intval = bat->soc * TOTAL_CHARGE / 100;
+		val->intval = soc * TOTAL_CHARGE / 100;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 		val->intval = TOTAL_CHARGE;
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
-		val->intval = bat->soc * TOTAL_LIFE_SECONDS / 100;
+		val->intval = soc * TOTAL_LIFE_SECONDS / 100;
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
-		val->intval = (100 - bat->soc) * TOTAL_CHARGE_FULL_SECONDS / 100;
+		val->intval = (100 - soc) * TOTAL_CHARGE_FULL_SECONDS / 100;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = 300;		/* tenths of °C; 300 = 30.0°C */
@@ -595,6 +621,7 @@ static int oneup_battery_probe(struct i2c_client *client)
 	bat->ac_candidate   = 1;
 	bat->status         = POWER_SUPPLY_STATUS_DISCHARGING;
 	bat->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+	spin_lock_init(&bat->lock);
 	i2c_set_clientdata(client, bat);
 
 	ret = init_battery_profile(client);
