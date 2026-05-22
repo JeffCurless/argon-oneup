@@ -416,9 +416,12 @@ static int init_battery_profile(struct i2c_client *client)
 	}
 
 	//
-	// Mark profile as loaded
+	// Mark profile as loaded — RMW to preserve lower SOC alert threshold bits
 	//
-	ret = i2c_smbus_write_byte_data(client, REG_SOCALERT, 0x80);
+	socalert = i2c_smbus_read_byte_data(client, REG_SOCALERT);
+	if (socalert < 0)
+		socalert = 0;
+	ret = i2c_smbus_write_byte_data(client, REG_SOCALERT, (u8)socalert | 0x80);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to set profile flag: %d\n", ret);
 		return ret;
@@ -531,7 +534,9 @@ static int oneup_bat_get_property(struct power_supply *psy,
 		val->intval = status;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
-		val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
+		val->intval = (status == POWER_SUPPLY_STATUS_CHARGING)
+			? POWER_SUPPLY_CHARGE_TYPE_FAST
+			: POWER_SUPPLY_CHARGE_TYPE_NONE;
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		val->intval = POWER_SUPPLY_HEALTH_GOOD;
@@ -559,10 +564,12 @@ static int oneup_bat_get_property(struct power_supply *psy,
 		val->intval = TOTAL_CHARGE;
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
-		val->intval = soc * TOTAL_LIFE_SECONDS / 100;
+		val->intval = (status == POWER_SUPPLY_STATUS_DISCHARGING)
+			? soc * TOTAL_LIFE_SECONDS / 100 : 0;
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
-		val->intval = (100 - soc) * TOTAL_CHARGE_FULL_SECONDS / 100;
+		val->intval = (status == POWER_SUPPLY_STATUS_CHARGING)
+			? (100 - soc) * TOTAL_CHARGE_FULL_SECONDS / 100 : 0;
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		val->strval = "oneUp Battery";
@@ -696,17 +703,6 @@ static const struct i2c_device_id oneup_battery_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, oneup_battery_i2c_id);
 
-static struct i2c_driver oneup_battery_driver = {
-	.driver = {
-		.name           = "oneup-battery",
-		.of_match_table = oneup_battery_of_match,
-		.pm             = &oneup_battery_pm_ops,
-	},
-	.probe    = oneup_battery_probe,
-	.id_table = oneup_battery_i2c_id,
-};
-module_i2c_driver(oneup_battery_driver);
-
 static int param_set_soc_shutdown(const char *key, const struct kernel_param *kp)
 {
 	long soc;
@@ -732,7 +728,7 @@ static int param_set_soc_shutdown(const char *key, const struct kernel_param *kp
 
 static int param_get_soc_shutdown(char *buffer, const struct kernel_param *kp)
 {
-	return sprintf(buffer, "%d", soc_shutdown);
+	return scnprintf(buffer, PAGE_SIZE, "%d\n", soc_shutdown);
 }
 
 static const struct kernel_param_ops param_ops_soc_shutdown = {
@@ -746,6 +742,17 @@ MODULE_PARM_DESC(soc_shutdown, "Shutdown system when the battery state of charge
 
 module_param(ac_debounce_polls, int, 0644);
 MODULE_PARM_DESC(ac_debounce_polls, "Number of consecutive polls (1-10) to confirm AC state change (default 3).");
+
+static struct i2c_driver oneup_battery_driver = {
+	.driver = {
+		.name           = "oneup-battery",
+		.of_match_table = oneup_battery_of_match,
+		.pm             = &oneup_battery_pm_ops,
+	},
+	.probe    = oneup_battery_probe,
+	.id_table = oneup_battery_i2c_id,
+};
+module_i2c_driver(oneup_battery_driver);
 
 MODULE_DESCRIPTION("Power supply driver for Argon40 1UP");
 MODULE_AUTHOR("Jeff Curless <jeff@thecurlesses.com>");
