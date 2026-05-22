@@ -133,8 +133,6 @@ static enum power_supply_property power_battery_props[] = {
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
-	POWER_SUPPLY_PROP_TEMP,
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
 static char *ac_supplied_to[] = { "BAT0" };
@@ -565,12 +563,6 @@ static int oneup_bat_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
 		val->intval = (100 - soc) * TOTAL_CHARGE_FULL_SECONDS / 100;
-		break;
-	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = 300;		/* tenths of °C; 300 = 30.0°C */
-		break;
-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = (4200 * 1000);	/* uV */
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		val->strval = "oneUp Battery";
