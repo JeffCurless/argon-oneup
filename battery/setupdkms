@@ -12,12 +12,22 @@ DKMS_VERSION=1.0
 DKMS_DEST=/usr/src/oneUpPower-${DKMS_VERSION}
 DKMS_SRC=$DKMS_DEST/src
 
+# dkms refuses to even attempt a build if the running kernel's headers are
+# missing, before any PRE_BUILD/MAKE hook gets a chance to run — so the check
+# has to happen here, before `dkms build`/`dkms install`.
+ensure_kernel_headers
+
 # Idempotent: remove any existing registration before re-adding so that
 # a re-run always produces a clean, known-good state.
 if sudo dkms status -m oneUpPower -v "$DKMS_VERSION" 2>/dev/null | grep -q oneUpPower; then
     echo "Removing existing DKMS registration for oneUpPower/${DKMS_VERSION}..."
-    sudo dkms remove -m oneUpPower -v "$DKMS_VERSION" --all
+    sudo dkms remove -m oneUpPower -v "$DKMS_VERSION" --all || true
 fi
+# Also remove the dkms tree entry directly. `dkms add` fails with "DKMS tree
+# already contains: oneUpPower/1.0" if /var/lib/dkms/oneUpPower/1.0 still
+# exists, which can happen even after `dkms remove --all` if it left behind
+# a stale directory for a kernel whose build tree no longer exists.
+sudo rm -rf "/var/lib/dkms/oneUpPower/${DKMS_VERSION}"
 # Also remove the source tree — dkms add fails if the directory already exists
 # even when no dkms registration is present (e.g. after a partial run).
 if [ -d "$DKMS_DEST" ]; then

@@ -39,6 +39,27 @@ detect_distro() {
     esac
 }
 
+ensure_kernel_headers() {
+    local kernel_release
+    kernel_release="$(uname -r)"
+
+    if [[ -d "/lib/modules/${kernel_release}/build" ]]; then
+        return 0
+    fi
+
+    detect_distro
+    case "$DISTRO_FAMILY" in
+        debian)
+            echo "Kernel headers for ${kernel_release} not found; installing linux-headers-${kernel_release}..."
+            sudo apt-get update
+            sudo apt-get install -y "linux-headers-${kernel_release}"
+            ;;
+        *)
+            echo "Kernel headers for ${kernel_release} not found and automatic installation is not supported for ${DISTRO_PRETTY_NAME}." >&2
+            ;;
+    esac
+}
+
 module_install_path() {
     printf '/lib/modules/%s/kernel/drivers/power/supply/%s.ko\n' "$(uname -r)" "$ONEUP_MODULE_NAME"
 }
