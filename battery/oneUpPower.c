@@ -9,7 +9,7 @@
  * module_i2c_driver() instead of manual module_init/exit.
  */
 
-#define pr_fmt(fmt) "oneup-battery " fmt
+#define pr_fmt(fmt) "oneup-battery: " fmt
 
 #include <linux/delay.h>
 #include <linux/devm-helpers.h>
@@ -22,6 +22,7 @@
 #include <linux/power_supply.h>
 #include <linux/reboot.h>
 #include <linux/spinlock.h>
+#include <linux/sysfs.h>
 #include <linux/workqueue.h>
 #include <generated/utsrelease.h>
 
@@ -161,30 +162,34 @@ static const struct power_supply_desc oneup_ac_desc = {
 	.get_property   = oneup_ac_get_property,
 };
 
-/* Update bat->status and bat->capacity_level from the current SOC and AC state. */
-static void set_power_states(struct oneup_battery *bat)
+/*
+ * Update bat->soc, bat->status, and bat->capacity_level from the given SOC and
+ * the current AC state.  All three fields are written under one lock hold so
+ * sysfs getters always see a consistent snapshot.
+ */
+static void set_power_states(struct oneup_battery *bat, int soc)
 {
-	int capacity = bat->soc;
 	int new_level, new_status;
 
-	if (capacity > SOC_THRESH_FULL)
+	if (soc > SOC_THRESH_FULL)
 		new_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
-	else if (capacity > SOC_THRESH_HIGH)
+	else if (soc > SOC_THRESH_HIGH)
 		new_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
-	else if (capacity > SOC_THRESH_NORMAL)
+	else if (soc > SOC_THRESH_NORMAL)
 		new_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
-	else if (capacity > SOC_THRESH_LOW)
+	else if (soc > SOC_THRESH_LOW)
 		new_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
 	else
 		new_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
 
 	if (bat->ac_online)
-		new_status = (capacity > SOC_THRESH_FULL) ? POWER_SUPPLY_STATUS_FULL
-						      : POWER_SUPPLY_STATUS_CHARGING;
+		new_status = (soc > SOC_THRESH_FULL) ? POWER_SUPPLY_STATUS_FULL
+						     : POWER_SUPPLY_STATUS_CHARGING;
 	else
 		new_status = POWER_SUPPLY_STATUS_DISCHARGING;
 
 	spin_lock(&bat->lock);
+	bat->soc            = soc;
 	bat->capacity_level = new_level;
 	bat->status         = new_status;
 	spin_unlock(&bat->lock);
@@ -238,25 +243,27 @@ static void check_ac_power(struct oneup_battery *bat)
 	}
 }
 
-/* Read the state-of-charge register and update bat->soc. */
-static void check_battery_state(struct oneup_battery *bat)
+/*
+ * Read the state-of-charge register.  Returns the new SOC, or the previous
+ * value if the read fails.  bat->soc itself is updated by set_power_states()
+ * so it stays consistent with status and capacity_level.
+ */
+static int check_battery_state(struct oneup_battery *bat)
 {
 	int soc;
 
 	soc = i2c_smbus_read_byte_data(bat->client, SOC_HIGH_REG);
 	if (soc < 0) {
 		dev_err(&bat->client->dev, "Failed to read SOC register: %d\n", soc);
-		return;
+		return bat->soc;
 	}
 	if (soc > 100)
 		soc = 100;
 
-	if (bat->soc != soc) {
-		spin_lock(&bat->lock);
-		bat->soc = soc;
-		spin_unlock(&bat->lock);
+	if (bat->soc != soc)
 		dev_info(&bat->client->dev, "Battery State of charge is %d%%\n", soc);
-	}
+
+	return soc;
 }
 
 /* Trigger a graceful system shutdown when battery is critically low. */
@@ -430,8 +437,7 @@ static void oneup_battery_work(struct work_struct *work)
 	int prev_capacity_level = bat->capacity_level;
 
 	check_ac_power(bat);
-	check_battery_state(bat);
-	set_power_states(bat);
+	set_power_states(bat, check_battery_state(bat));
 
 	if (bat->ac_online == 0 && bat->soc < READ_ONCE(soc_shutdown) &&
 	    !bat->shutdown_triggered) {
@@ -545,7 +551,7 @@ static int oneup_bat_get_property(struct power_supply *psy,
 }
 
 /* PM: cancel the work on suspend, reschedule on resume. */
-static int __maybe_unused oneup_battery_suspend(struct device *dev)
+static int oneup_battery_suspend(struct device *dev)
 {
 	struct oneup_battery *bat = i2c_get_clientdata(to_i2c_client(dev));
 
@@ -553,7 +559,7 @@ static int __maybe_unused oneup_battery_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused oneup_battery_resume(struct device *dev)
+static int oneup_battery_resume(struct device *dev)
 {
 	struct oneup_battery *bat = i2c_get_clientdata(to_i2c_client(dev));
 
@@ -561,8 +567,8 @@ static int __maybe_unused oneup_battery_resume(struct device *dev)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(oneup_battery_pm_ops,
-			 oneup_battery_suspend, oneup_battery_resume);
+static DEFINE_SIMPLE_DEV_PM_OPS(oneup_battery_pm_ops,
+				oneup_battery_suspend, oneup_battery_resume);
 
 /*
  * Called by the I2C core when a device matching our id_table or of_match_table
@@ -610,7 +616,7 @@ static int oneup_battery_probe(struct i2c_client *client)
 		dev_info(&client->dev, "AC Power is %s at boot.\n",
 			 bat->ac_online ? "connected" : "not connected");
 	}
-	set_power_states(bat);
+	set_power_states(bat, bat->soc);
 
 	bat_cfg.drv_data = bat;
 	bat_cfg.fwnode   = dev_fwnode(&client->dev);
@@ -659,30 +665,34 @@ MODULE_DEVICE_TABLE(i2c, oneup_battery_i2c_id);
 static int param_set_soc_shutdown(const char *key, const struct kernel_param *kp)
 {
 	long soc;
+	int ret;
 
-	if (kstrtol(key, 10, &soc) == 0) {
-		if (soc == 0) {
-			pr_info("Disabling automatic shutdown when battery is below threshold.\n");
-			soc_shutdown = 0;
-			return 0;
-		} else if ((soc >= 1) && (soc <= 20)) {
-			pr_info("Changing automatic shutdown when battery is below %ld%%\n", soc);
-			soc_shutdown = soc;
-			return 0;
-		} else {
-			pr_warn("Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n",
-				soc);
-			return -EINVAL;
-		}
-	} else {
+	ret = kstrtol(key, 10, &soc);
+	if (ret) {
 		pr_warn("Could not convert to integer\n");
+		return ret;
 	}
-	return -ENOENT;
+
+	if (soc == 0) {
+		pr_info("Disabling automatic shutdown when battery is below threshold.\n");
+		soc_shutdown = 0;
+		return 0;
+	}
+
+	if (soc >= 1 && soc <= 20) {
+		pr_info("Changing automatic shutdown when battery is below %ld%%\n", soc);
+		soc_shutdown = soc;
+		return 0;
+	}
+
+	pr_warn("Invalid value (%ld%%), please change to: 0 to disable, 1-20 to set shutdown threshold.\n",
+		soc);
+	return -EINVAL;
 }
 
 static int param_get_soc_shutdown(char *buffer, const struct kernel_param *kp)
 {
-	return scnprintf(buffer, PAGE_SIZE, "%d\n", soc_shutdown);
+	return sysfs_emit(buffer, "%d\n", soc_shutdown);
 }
 
 static const struct kernel_param_ops param_ops_soc_shutdown = {
@@ -690,8 +700,7 @@ static const struct kernel_param_ops param_ops_soc_shutdown = {
 	.get = param_get_soc_shutdown,
 };
 
-#define param_check_soc_shutdown(name, p) __param_check(name, p, void)
-module_param(soc_shutdown, soc_shutdown, 0644);
+module_param_cb(soc_shutdown, &param_ops_soc_shutdown, &soc_shutdown, 0644);
 MODULE_PARM_DESC(soc_shutdown, "Shutdown system when the battery state of charge is lower than this value.");
 
 module_param(ac_debounce_polls, int, 0644);
@@ -701,7 +710,7 @@ static struct i2c_driver oneup_battery_driver = {
 	.driver = {
 		.name           = "oneup-battery",
 		.of_match_table = oneup_battery_of_match,
-		.pm             = &oneup_battery_pm_ops,
+		.pm             = pm_sleep_ptr(&oneup_battery_pm_ops),
 	},
 	.probe    = oneup_battery_probe,
 	.id_table = oneup_battery_i2c_id,
