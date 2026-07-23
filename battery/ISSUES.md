@@ -1,5 +1,21 @@
 # Known Issues
 
+## Low Severity
+
+### Probe can block for up to ~18 s if the fuel gauge never becomes ready
+
+`restart_battery_ic()` retries 3 times, each attempt sleeping 1 s around the
+control-register writes plus up to 5 × 1 s polling `REG_ICSTATE`. On healthy
+hardware the first poll succeeds; the worst case only occurs with a dead or
+absent IC. Acceptable for now, but a shorter budget or deferred retry would be
+cleaner.
+
+### `SERIAL_NUMBER` reports the kernel release string
+
+`POWER_SUPPLY_PROP_SERIAL_NUMBER` returns `UTS_RELEASE`, which is the running
+kernel version, not a battery serial. The CW2217 has no readable serial; either
+drop the property or return a fixed pack identifier.
+
 ## Medium Severity
 
 ### 1. Hardcoded `VOLTAGE_NOW` and `TEMP` return fake values *(partially fixed)*
