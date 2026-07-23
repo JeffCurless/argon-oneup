@@ -40,18 +40,39 @@ detect_distro() {
 }
 
 ensure_kernel_headers() {
-    local kernel_release
+    local kernel_release flavor meta apt_updated=0
     kernel_release="$(uname -r)"
+
+    detect_distro
+
+    # On Raspberry Pi OS the versioned headers are pulled in by a flavor
+    # metapackage (linux-headers-rpi-2712, linux-headers-rpi-v8, ...).  If that
+    # metapackage is missing, headers stop tracking kernel updates and DKMS
+    # autoinstall is skipped at upgrade time with "kernel headers for this
+    # kernel do not seem to be installed" — the module is then absent after
+    # rebooting into the new kernel.  Installing only the versioned headers
+    # package fixes the current kernel but not the next update, so make sure
+    # the metapackage itself is installed.
+    if [[ "$DISTRO_FAMILY" == "debian" && "$kernel_release" == *"+rpt-rpi-"* ]]; then
+        flavor="${kernel_release##*+rpt-}"
+        meta="linux-headers-${flavor}"
+        if ! dpkg-query -W -f '${Status}' "$meta" 2>/dev/null | grep -q 'install ok installed'; then
+            echo "Headers metapackage ${meta} is not installed."
+            echo "Installing it so kernel headers (and DKMS builds) follow future kernel updates..."
+            sudo apt-get update
+            apt_updated=1
+            sudo apt-get install -y "$meta"
+        fi
+    fi
 
     if [[ -d "/lib/modules/${kernel_release}/build" ]]; then
         return 0
     fi
 
-    detect_distro
     case "$DISTRO_FAMILY" in
         debian)
             echo "Kernel headers for ${kernel_release} not found; installing linux-headers-${kernel_release}..."
-            sudo apt-get update
+            [[ "$apt_updated" -eq 1 ]] || sudo apt-get update
             sudo apt-get install -y "linux-headers-${kernel_release}"
             ;;
         *)

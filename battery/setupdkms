@@ -26,8 +26,11 @@ fi
 # Also remove the dkms tree entry directly. `dkms add` fails with "DKMS tree
 # already contains: oneUpPower/1.0" if /var/lib/dkms/oneUpPower/1.0 still
 # exists, which can happen even after `dkms remove --all` if it left behind
-# a stale directory for a kernel whose build tree no longer exists.
-sudo rm -rf "/var/lib/dkms/oneUpPower/${DKMS_VERSION}"
+# a stale directory for a kernel whose build tree no longer exists.  Remove
+# the whole module directory, not just the version subtree — dkms keeps
+# kernel-<ver>-<arch> symlinks as siblings of the version directory, and
+# removing only the subtree leaves them dangling.
+sudo rm -rf "/var/lib/dkms/oneUpPower"
 # Also remove the source tree — dkms add fails if the directory already exists
 # even when no dkms registration is present (e.g. after a partial run).
 if [ -d "$DKMS_DEST" ]; then
