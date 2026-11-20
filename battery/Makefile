@@ -14,14 +14,15 @@ KDIR := $(shell bash ./kdir.sh $(KVERSION) 2>/dev/null)
 PWD := $(shell pwd)
 CC_VERSION_TEXT := $(shell gcc --version | head -n 1)
 
+# `all` must be the first target so a bare `make` builds the module.
+all: check-headers
+	$(MAKE) -C $(shell bash ./kdir.sh $(KVERSION)) M=$(PWD) "CONFIG_CC_VERSION_TEXT=$(CC_VERSION_TEXT)" modules
+
 check-headers:
 	@if [ -z "$(KDIR)" ]; then \
 		echo "Linux headers for $(KVERSION) not found. Attempting to install..."; \
 		sudo apt install -y linux-headers-$(KVERSION); \
 	fi
-
-all: check-headers
-	$(MAKE) -C $(shell bash ./kdir.sh $(KVERSION)) M=$(PWD) "CONFIG_CC_VERSION_TEXT=$(CC_VERSION_TEXT)" modules
 
 clean:
 	$(MAKE) -C $(shell bash ./kdir.sh $(KVERSION)) M=$(PWD) "CONFIG_CC_VERSION_TEXT=$(CC_VERSION_TEXT)" clean

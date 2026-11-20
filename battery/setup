@@ -41,8 +41,12 @@ install_deps() {
 
     case "$platform" in
         raspbian|debian)
+            # Kernel headers are handled by ensure_kernel_headers (lib.sh),
+            # which installs the flavor metapackage matching the running
+            # kernel (e.g. linux-headers-rpi-2712 on Pi 5 / CM5) so DKMS keeps
+            # rebuilding the module after kernel updates.
             pkg_manager=(apt-get install -y)
-            packages=(build-essential linux-headers-rpi-v8 dkms device-tree-compiler)
+            packages=(build-essential dkms device-tree-compiler)
             ;;
         ubuntu)
             pkg_manager=(apt-get install -y)
@@ -81,6 +85,10 @@ install_deps() {
 
     echo "Installing: ${packages[*]}"
     "${pkg_manager[@]}" "${packages[@]}"
+
+    # dkms refuses to build if the running kernel's headers are missing, so
+    # verify (and on Debian-family systems, install) them before building.
+    ensure_kernel_headers
 }
 
 # ── 2. Build kernel module and Device Tree overlay ───────────────────────────
