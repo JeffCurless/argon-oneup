@@ -2,7 +2,7 @@
 /plugin/;
 
 / {
-	compatible = "raspberrypi,5-model-b";
+	compatible = "raspberrypi,5-compute-module";
 
 	fragment@0 {
 		target = <&i2c1>;
