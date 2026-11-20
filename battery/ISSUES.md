@@ -2,55 +2,34 @@
 
 ## Low Severity
 
-### Probe can block for up to ~18 s if the fuel gauge never becomes ready
+### Probe can block for up to ~2 s if the fuel gauge never becomes ready
 
-`restart_battery_ic()` retries 3 times, each attempt sleeping 1 s around the
-control-register writes plus up to 5 × 1 s polling `REG_ICSTATE`. On healthy
-hardware the first poll succeeds; the worst case only occurs with a dead or
-absent IC. Acceptable for now, but a shorter budget or deferred retry would be
-cleaner.
+`restart_battery_ic()` (only called when the battery profile has to be
+reprogrammed) retries 3 times; each attempt sleeps 2 × 100 ms around the
+control-register writes plus up to 5 × 100 ms polling `REG_ICSTATE`, for a
+worst case of about 2.1 s. On healthy hardware the first poll succeeds; the
+worst case only occurs with a dead or absent IC. Probe continues with a
+warning if the profile cannot be loaded.
 
-### `SERIAL_NUMBER` reports the kernel release string
+### `temp` accuracy is unverified
 
-`POWER_SUPPLY_PROP_SERIAL_NUMBER` returns `UTS_RELEASE`, which is the running
-kernel version, not a battery serial. The CW2217 has no readable serial; either
-drop the property or return a fixed pack identifier.
+`TEMP` is read from register `0x06` using the CW2217 formula
+(−40 °C + 0.5 °C/LSB). On the reference unit it has been observed to read a
+constant 25.0 °C, which may mean the pack's NTC is not wired to the IC (the
+CW2217 then reports a default). Because `HEALTH` reports `Overheat` above
+55 °C and `Cold` below 0 °C from this value, it should be cross-checked with a
+thermometer. Use `tools/cw2217_probe.py` to watch the raw register.
 
-## Medium Severity
+### Time estimates use integer SOC
 
-### 1. Hardcoded `VOLTAGE_NOW` and `TEMP` return fake values *(partially fixed)*
+`time_to_empty_avg` / `time_to_full_now` compute remaining charge from the
+integer `capacity`, not the 1/256 % fractional SOC that `charge_now` uses, so
+the estimate moves in 1 % steps.
 
-`POWER_SUPPLY_PROP_TEMP` and `POWER_SUPPLY_PROP_VOLTAGE_NOW` have been removed
-from `power_battery_props[]` and their `case` branches dropped. Userspace now
-receives `-EINVAL` (property not supported) rather than plausible-looking but
-wrong data.
+## Resolved
 
-#### Path forward — real register reads (requires CW2217 datasheet)
-
-The CW2217 exposes cell voltage at registers `0x02` (high) / `0x03` (low) and
-die temperature at `0x06` (high) / `0x07` (low). Once the register map and
-scaling factors are confirmed, the implementation path is:
-
-1. **Add cached fields to `struct oneup_battery`:**
-   ```c
-   int voltage_uv;   /* cell voltage in µV */
-   int temp_dc;      /* temperature in tenths of °C */
-   ```
-
-2. **Add a `check_voltage_temp()` helper** (alongside `check_battery_state`)
-   that reads the two register pairs, applies the datasheet scaling, and
-   writes the results under `bat->lock`.
-
-3. **Call it from `oneup_battery_work()`** after `check_battery_state()`.
-
-4. **Re-add the properties** to `power_battery_props[]` and their `case`
-   branches in `oneup_bat_get_property()`, reading from the cached fields
-   under the spinlock.
-
-5. **Propagate changes** — include `voltage_uv` and `temp_dc` in the
-   `power_supply_changed(bat->bat_psy)` condition check.
-
-Use `tools/cw2217_probe.py` to dump raw register values from a live system
-and cross-check against a known voltage (multimeter on the battery terminals)
-and known temperature to reverse-engineer the scaling if the datasheet is
-unavailable.
+- **`VOLTAGE_NOW` / `TEMP` returned fake values** — both now read the CW2217
+  (`0x02`–`0x03` at 312.5 µV/LSB × 3 cells, and `0x06`), along with
+  `CURRENT_NOW`, `POWER_NOW`, `CYCLE_COUNT` and SOH-based `CHARGE_FULL`.
+- **`SERIAL_NUMBER` reported the kernel release string** — the property has
+  been removed (the CW2217 has no readable serial number).

@@ -28,7 +28,7 @@
 
 #define VERSION_MAJOR   1
 #define VERSION_MINOR   0
-#define VERSION_EDIT    8
+#define VERSION_EDIT    9
 
 #define CELLS_IN_SERIES             3
 #define TOTAL_LIFE_SECONDS          (6 * 60 * 60)
@@ -55,10 +55,6 @@
 #define REG_ICSTATE                 0xA7
 #define REG_STB_CUR_HIGH            0xA8
 #define REG_STB_CUR_LOW             0xA9
-
-/* Backward compatibility aliases */
-#define CURRENT_HIGH_REG            REG_CURRENT_HIGH
-#define SOC_HIGH_REG                REG_SOC_HIGH
 
 #define CTRL_RESTART        0x30
 #define CTRL_SLEEP          0xF0
@@ -91,9 +87,10 @@ struct oneup_battery {
 	struct power_supply  *ac_psy;
 
 	/*
-	 * Protects soc, ac_online, status, capacity_level, voltage_uv,
-	 * current_ua, and temp_dc against concurrent reads from sysfs getters
-	 * while the work handler writes them.
+	 * Protects the cached readings below (soc through temp_dc, except the
+	 * work-handler-private ac_candidate and ac_debounce) against concurrent
+	 * reads from sysfs getters while the work handler writes them.  The work
+	 * handler is the sole writer, so it may read them without the lock.
 	 */
 	spinlock_t lock;
 
@@ -285,7 +282,10 @@ static int read_cycle_count(struct i2c_client *client, int *cycles)
 
 /*
  * Read State of Health (SOH) from register 0xA6.
- * Integer percentage from 0 to 100.
+ * Integer percentage from 0 to 100.  A raw value of 0 means the IC has not
+ * yet produced a SOH estimate (e.g. right after a profile reload), so it is
+ * reported as -ENODATA and the caller keeps its previous value rather than
+ * treating the battery as dead or silently assuming 100%.
  */
 static int read_soh(struct i2c_client *client, int *soh)
 {
@@ -295,12 +295,10 @@ static int read_soh(struct i2c_client *client, int *soh)
 	if (val < 0)
 		return val;
 
-	if (val > 100)
-		val = 100;
-	else if (val <= 0)
-		val = 100;
+	if (val == 0)
+		return -ENODATA;
 
-	*soh = val;
+	*soh = min(val, 100);
 	return 0;
 }
 
@@ -447,7 +445,7 @@ static int check_battery_state(struct oneup_battery *bat, int *frac_soc)
 {
 	int soc_h, soc_l;
 
-	soc_h = i2c_smbus_read_byte_data(bat->client, SOC_HIGH_REG);
+	soc_h = i2c_smbus_read_byte_data(bat->client, REG_SOC_HIGH);
 	if (soc_h < 0) {
 		dev_err(&bat->client->dev, "Failed to read SOC register: %d\n", soc_h);
 		return bat->soc;
@@ -873,7 +871,6 @@ static int oneup_battery_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	bat->client         = client;
-	bat->soc            = 100;
 	bat->soc            = 100;
 	bat->soc_fractional = 100 << 8;
 	bat->cycle_count    = 0;
